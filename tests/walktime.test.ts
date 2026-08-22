@@ -1,5 +1,15 @@
-import { test, expect } from "bun:test";
-import { calculateWalkTime, getVenueCapacityStatus, normalizeVenue, CORE_VENUES } from "../lib/walktime";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+const expect = (val: any) => ({
+  toBe: (expected: any) => assert.strictEqual(val, expected),
+  toEqual: (expected: any) => assert.deepStrictEqual(val, expected),
+  toBeNull: () => assert.strictEqual(val, null),
+  toBeGreaterThan: (expected: number) => assert.ok(val > expected),
+  toBeGreaterThanOrEqual: (expected: number) => assert.ok(val >= expected),
+  toBeLessThanOrEqual: (expected: number) => assert.ok(val <= expected),
+});
+import { calculateWalkTime, getVenueCapacityStatus, normalizeVenue, CORE_VENUES } from "../lib/walktime.ts";
 
 test("calculateWalkTime between Hyatt and Marriott", () => {
   const result = calculateWalkTime("Hyatt Regency Atlanta - Centennial I", "Marriott Marquis - Atrium Ballroom");
