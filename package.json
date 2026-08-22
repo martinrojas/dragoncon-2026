@@ -6,7 +6,12 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "test": "node --experimental-strip-types --test tests/walktime.test.ts"
+    "test": "node --experimental-strip-types --test tests/walktime.test.ts",
+    "deploy": "void deploy --backend cloudflare",
+    "deploy:provision": "void deploy --backend cloudflare --provision",
+    "db:generate": "void db generate",
+    "db:migrate": "void db migrate",
+    "db:seed": "void db seed"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^13.3.0",

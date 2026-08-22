@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dragoncon-2026",
+  "account_id": "d286b4524e2403f3b6e3135ab14972ba",
+  "main": "dist/ssr/index.js",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dragoncon-2026-db",
+      "database_id": "c3ce3824-f470-45fb-ae37-f6e899a4bd48",
+      "migrations_dir": "./db/migrations"
+    }
+  ],
+  "assets": {
+    "directory": "dist/client"
+  }
+}

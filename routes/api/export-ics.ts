@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { defineHandler } from "void";
 import { db, eq, inArray } from "void/db";
 import { events, userEvents } from "../../db/schema";
 
@@ -14,7 +15,7 @@ function escapeIcsText(str: string): string {
   return str.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
-export async function GET(c: Context) {
+export const GET = defineHandler(async (c: Context) => {
   const userId = c.req.query("userId");
 
   if (!userId) {
@@ -71,4 +72,4 @@ export async function GET(c: Context) {
     "Content-Type": "text/calendar; charset=utf-8",
     "Content-Disposition": 'attachment; filename="dragoncon-schedule.ics"',
   });
-}
+});
