@@ -631,7 +631,7 @@ a:active {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background-color: var(--blur-scrim);
+  background-color: rgba(12, 14, 17, 0.75);
   backdrop-filter: var(--blur-scrim);
   -webkit-backdrop-filter: var(--blur-scrim);
 }
