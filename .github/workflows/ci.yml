@@ -39,4 +39,6 @@ jobs:
         run: pnpm test
 
       - name: Run production build
+        env:
+          VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN || secrets.CF_BEACON_TOKEN }}
         run: pnpm build

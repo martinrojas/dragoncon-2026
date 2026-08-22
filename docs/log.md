@@ -4,6 +4,17 @@ Entries are listed in reverse chronological order (newest first).
 
 ---
 
+## 2026-08-22 — Cloudflare Observability & Web Analytics
+
+- **Type:** Feature / Telemetry.
+- **Changes:**
+  - `wrangler.jsonc`: Added complete `observability` configuration (logs enabled, invocation logs, trace settings, and head sampling).
+  - `pages/index.tsx`: Integrated dynamic Cloudflare Web Analytics beacon script loader supporting SPA route tracking via `VITE_CF_BEACON_TOKEN` or `window.__CF_BEACON_TOKEN`.
+  - `.env.example`: Documented `VITE_CF_BEACON_TOKEN`.
+  - `docs/guides/deployment-runbook.md`: Added Section 6 on Cloudflare Web Analytics setup.
+
+---
+
 ## 2026-08-22 — GitHub Actions CI & CD Setup
 
 - **Type:** Infrastructure / DevOps.

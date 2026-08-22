@@ -94,7 +94,7 @@ Deployments are automated via `.github/workflows/deploy.yml` on push to `main`. 
 
 ## Live Deployment
 
-- **Production App:** [https://dragoncon-2026.martin-d28.workers.dev](https://dragoncon-2026.martin-d28.workers.dev)
+- **Production App:** [https://dragoncon.martinrojas.dev](https://dragoncon.martinrojas.dev) (or fallback [https://dragoncon-2026.martin-d28.workers.dev](https://dragoncon-2026.martin-d28.workers.dev))
 - **API Endpoints:**
   - `GET /api/events` — Query and filter schedule events
   - `GET /api/changes` — Recent con schedule changes

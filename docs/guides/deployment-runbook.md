@@ -98,9 +98,22 @@ The repository includes two automated workflows:
 1. **CI (`.github/workflows/ci.yml`)**: Runs on pull requests and pushes to `main`. Automatically installs dependencies, executes unit tests (`pnpm test`), and runs the production build (`pnpm build`).
 2. **Deploy (`.github/workflows/deploy.yml`)**: Runs on push to `main` (and manual dispatch). Validates tests and builds before deploying the Worker and applying remote D1 migrations via `pnpm run deploy`.
 
-### Required Secrets
+### Required Secrets & Variables
 In GitHub Settings $\to$ Secrets and variables $\to$ Actions:
-- `CLOUDFLARE_API_TOKEN`: Cloudflare API token with *Workers Scripts: Edit* and *D1: Edit* permissions.
-- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account ID.
-
+- `CLOUDFLARE_API_TOKEN` (Secret): Cloudflare API token with *Workers Scripts: Edit* and *D1: Edit* permissions.
+- `CLOUDFLARE_ACCOUNT_ID` (Secret/Variable): Cloudflare account ID.
+- `CF_BEACON_TOKEN` (Optional Secret/Variable): Cloudflare Web Analytics site token (injected into client build as `VITE_CF_BEACON_TOKEN`).
 Pushing to `main` executes the deployment workflow automatically.
+
+---
+
+## 6. Cloudflare Web Analytics Setup
+
+1. **Create Web Analytics Site in Cloudflare:**
+   - Navigate to **Analytics & Logs $\to$ Web Analytics** in the Cloudflare Dashboard.
+   - Click **Add a site** and enter your hostname (e.g. `dragoncon-2026.martin-d28.workers.dev`).
+   - Copy the generated 32-character token from the beacon tag (`data-cf-beacon='{"token": "..."}'`).
+
+2. **Configure Token:**
+   - In `.env` (or CI environment variables): set `VITE_CF_BEACON_TOKEN=<your-token>`.
+   - The application automatically injects the Cloudflare Web Analytics beacon script on client mount with `"spa": true` for client-side navigation tracking.
