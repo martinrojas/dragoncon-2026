@@ -864,6 +864,14 @@ export default function HomePage({
     return total;
   }, [activeDaySavedEvents]);
 
+  const desktopNavTabs = [
+    { id: "schedule", label: "Schedule", icon: "calendar-clock", active: activeTab === "schedule", onClick: () => setActiveTab("schedule") },
+    { id: "agenda", label: "Mine", icon: "bookmark", active: activeTab === "agenda", badge: agendaItems.length, onClick: () => setActiveTab("agenda") },
+    { id: "friends", label: "Squad", icon: "users", active: activeTab === "friends", onClick: () => setActiveTab("friends") },
+    { id: "changes", label: "Changes", icon: "bell", active: activeTab === "changes", badge: recentChanges?.length, onClick: () => setActiveTab("changes") },
+    { id: "profile", label: "Profile", icon: "user", active: activeTab === "profile", onClick: () => setActiveTab("profile") },
+  ];
+
   return (
     <>
       <link rel="stylesheet" href="/cyberdragon.css" />
@@ -871,11 +879,12 @@ export default function HomePage({
       <div
         style={{
           minHeight: "100vh",
+          minHeight: "100dvh",
           backgroundColor: "var(--canvas)",
           backgroundImage: "var(--grid-8)",
           color: "var(--text-primary)",
           fontFamily: "var(--font-core)",
-          paddingBottom: 80,
+          paddingBottom: "calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 24px)",
         }}
       >
         {/* Floating Toast Notification */}
@@ -927,6 +936,7 @@ export default function HomePage({
             <AppBar
               eyebrow={getDayEyebrow(selectedDay)}
               title="Schedule"
+              navTabs={desktopNavTabs}
               right={[
                 {
                   icon: "search",
@@ -1056,6 +1066,7 @@ export default function HomePage({
             <AppBar
               eyebrow={`${agendaItems.length} SESSIONS SAVED · 5 DAYS`}
               title="My Schedule"
+              navTabs={desktopNavTabs}
               right={[
                 {
                   icon: "download",
@@ -1288,7 +1299,7 @@ export default function HomePage({
         {/* TAB 3: SQUAD (FRIENDS & OVERLAP) */}
         {activeTab === "friends" && (
           <div>
-            <AppBar eyebrow="DRAGON CON '26 SQUAD" title="Squad" />
+            <AppBar eyebrow="DRAGON CON '26 SQUAD" title="Squad" navTabs={desktopNavTabs} />
 
             <main style={{ maxWidth: 900, margin: "0 auto", padding: "16px var(--gutter)" }}>
               {!currentUser ? (
@@ -1419,7 +1430,7 @@ export default function HomePage({
         {/* TAB 4: UPDATES & DIFF FEED */}
         {activeTab === "changes" && (
           <div>
-            <AppBar eyebrow="DRAGON CON '26" title="Schedule Changes" />
+            <AppBar eyebrow="DRAGON CON '26" title="Schedule Changes" navTabs={desktopNavTabs} />
 
             <main style={{ maxWidth: 900, margin: "0 auto", padding: "16px var(--gutter)" }}>
               <span className="cd-label" style={{ display: "block", marginBottom: 14 }}>
@@ -1461,6 +1472,7 @@ export default function HomePage({
           <div>
             <AppBar
               title="Profile"
+              navTabs={desktopNavTabs}
               right={
                 currentUser
                   ? [

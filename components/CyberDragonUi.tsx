@@ -155,12 +155,14 @@ export function AppBar({
   eyebrow,
   left,
   right = [],
+  navTabs,
   style,
 }: {
   title: string;
   eyebrow?: string;
   left?: { icon: string; label: string; onClick?: () => void };
   right?: Array<{ icon: string; label: string; active?: boolean; onClick?: () => void }>;
+  navTabs?: Array<{ id: string; label: string; icon: string; active: boolean; badge?: number; onClick: () => void }>;
   style?: React.CSSProperties;
 }): JSX.Element {
   return (
@@ -174,6 +176,7 @@ export function AppBar({
         gap: 8,
         height: "var(--appbar-h)",
         padding: "0 12px 0 " + (left ? "6px" : "16px"),
+        paddingTop: "env(safe-area-inset-top, 0px)",
         background: "var(--surface-glass-strong)",
         backdropFilter: "var(--blur-bar)",
         WebkitBackdropFilter: "var(--blur-bar)",
@@ -209,6 +212,34 @@ export function AppBar({
           {title}
         </span>
       </div>
+      {navTabs && navTabs.length > 0 && (
+        <nav className="cd-nav-desktop" aria-label="Main Navigation">
+          {navTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={tab.onClick}
+              className={`cd-nav-desktop-item ${tab.active ? "active" : ""}`}
+            >
+              <Icon name={tab.icon} size={15} />
+              <span>{tab.label}</span>
+              {tab.badge != null && tab.badge > 0 && (
+                <span
+                  style={{
+                    background: "var(--purple-500)",
+                    color: "#fff",
+                    fontSize: 9,
+                    fontWeight: 700,
+                    borderRadius: "50%",
+                    padding: "1px 5px",
+                  }}
+                >
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         {right.map((r, i) => (
           <IconButton key={i} icon={r.icon} label={r.label} active={r.active} onClick={r.onClick} />

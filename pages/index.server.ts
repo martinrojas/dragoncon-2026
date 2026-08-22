@@ -1,4 +1,4 @@
-import { defineHandler, type InferProps } from "void";
+import { defineHandler, defineHead, type InferProps } from "void";
 import { db, desc, eq } from "void/db";
 import { eventChanges, events } from "../db/schema";
 
@@ -39,5 +39,24 @@ export const loader = defineHandler(async () => {
     days: sortedDays,
     locations: Array.from(locationsSet).sort(),
     recentChanges,
+  };
+});
+
+export const head = defineHead<Props>(() => {
+  return {
+    title: "CyberDragon | Dragon Con 2026",
+    meta: [
+      { charset: "utf-8" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      { name: "theme-color", content: "#0C0E11" },
+      { name: "description", content: "Mobile companion PWA for Dragon Con 2026 in Atlanta, GA" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", "content": "black-translucent" },
+    ],
+    link: [
+      { rel: "stylesheet", href: "/cyberdragon.css" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+    ],
   };
 });

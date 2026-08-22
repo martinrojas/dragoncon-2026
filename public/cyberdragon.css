@@ -220,6 +220,11 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--canvas);
@@ -228,8 +233,9 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   background-image: var(--grid-8);
+  min-height: 100vh;
+  min-height: 100dvh;
 }
-
 ::selection {
   background: var(--accent-quiet);
   color: var(--text-primary);
@@ -439,7 +445,8 @@ a:active {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 64px;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   background-color: var(--surface-glass-strong);
   backdrop-filter: var(--blur-bar);
   -webkit-backdrop-filter: var(--blur-bar);
@@ -463,27 +470,77 @@ a:active {
   align-items: center;
   justify-content: center;
   height: 100%;
+  min-height: 48px;
   border: none;
   background: transparent;
   color: var(--text-tertiary);
   font: var(--type-micro);
+  font-size: 11px;
   cursor: pointer;
   gap: 3px;
   position: relative;
   transition: color var(--t-control);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.cd-tabbar-item:active {
+  color: var(--text-primary);
 }
 
 .cd-tabbar-item.active {
   color: var(--gold-500);
 }
 
+/* ===== Desktop Header Navigation ===== */
+.cd-nav-desktop {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-inset);
+  padding: 3px;
+  border-radius: var(--r-2);
+  border: 1px solid var(--line-hairline);
+}
+
+@media (max-width: 768px) {
+  .cd-nav-desktop {
+    display: none !important;
+  }
+}
+
+.cd-nav-desktop-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-1);
+  color: var(--text-secondary);
+  font: var(--fw-semibold) var(--fs-body-sm)/1 var(--font-core);
+  cursor: pointer;
+  transition: var(--t-control);
+}
+
+.cd-nav-desktop-item:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,.05);
+}
+
+.cd-nav-desktop-item.active {
+  color: var(--gold-500);
+  background: var(--grey-700);
+  border-color: var(--line-subtle);
+  box-shadow: var(--inner-lip);
+}
 /* ===== Toast Notification Engine ===== */
 .cd-toast-container {
   position: fixed;
   left: var(--gutter);
   right: var(--gutter);
-  bottom: 76px;
-  z-index: 300;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 12px);
   display: flex;
   justify-content: center;
   pointer-events: none;
