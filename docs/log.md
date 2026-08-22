@@ -3,6 +3,20 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-22 — Mobile Viewport Scaling & Responsive Bottom Bar
+
+- **Type:** Bugfix / Responsive Design.
+- **Root Cause:** In Void Pages mode, missing `<meta name="viewport">` caused mobile browsers (Pixel / Android Chrome) to fall back to a 980px desktop emulation viewport. This scaled all text down to ~40% and prevented `@media (max-width: 768px)` from triggering, rendering the bottom navigation bar (`.cd-tabbar`) invisible.
+- **Changes:**
+  - `void.json`: Configured site-wide `head.meta` with `width=device-width, initial-scale=1, viewport-fit=cover`, `theme-color`, and PWA meta tags; configured site-wide `head.link` for stylesheet and webmanifest.
+  - `pages/index.server.ts`: Exported `defineHead` for page metadata, avoiding duplicate `<link>` tag concatenation.
+  - `public/cyberdragon.css`: Added `-webkit-text-size-adjust: 100%`, `min-height: 100dvh`, gesture navigation safe-area bottom insets (`env(safe-area-inset-bottom)`), touch action optimizations, and desktop header navigation (`.cd-nav-desktop`).
+  - `components/CyberDragonUi.tsx`: Added top safe-area padding to `AppBar` and supported desktop navigation items.
+  - `pages/index.tsx`: Cleaned up stray inline `<link>` tags, added desktop nav tabs, and set dynamic safe-area bottom padding.
+  - `db/seed.ts`: Updated sample seed script with Dragon Con 2026 events.
+
+---
+
 
 ## 2026-08-22 — Cloudflare Observability & Web Analytics
 
