@@ -73,7 +73,13 @@ export async function GET(c: Context) {
     events: allEvents,
     facets: {
       tracks: Array.from(tracksSet).sort(),
-      days: Array.from(daysSet).sort(),
+      days: Array.from(daysSet).sort((a, b) => {
+        const matchA = a.match(/\d+/);
+        const matchB = b.match(/\d+/);
+        const numA = matchA ? parseInt(matchA[0], 10) : 99;
+        const numB = matchB ? parseInt(matchB[0], 10) : 99;
+        return numA - numB;
+      }),
       locations: Array.from(locationsSet).sort(),
     },
   });

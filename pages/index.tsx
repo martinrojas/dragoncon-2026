@@ -730,9 +730,16 @@ export default function HomePage({
     triggerToast("Signed out", "ok");
   };
 
-  // Format Day Items for DayStrip
+  // Format Day Items for DayStrip (sorted chronologically by con date)
   const formattedDays: DayItem[] = useMemo(() => {
-    return days.map((dayStr) => {
+    const parseDateNum = (dayStr: string) => {
+      const match = dayStr.match(/\d+/);
+      return match ? parseInt(match[0], 10) : 99;
+    };
+
+    const sortedDays = [...days].sort((a, b) => parseDateNum(a) - parseDateNum(b));
+
+    return sortedDays.map((dayStr) => {
       const parts = dayStr.split(",");
       const dayName = parts[0]?.trim().toUpperCase() || "CON";
       const label = dayName.slice(0, 3);

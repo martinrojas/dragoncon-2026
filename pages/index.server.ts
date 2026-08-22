@@ -25,12 +25,18 @@ export const loader = defineHandler(async () => {
     if (ev.day) daysSet.add(ev.day);
     if (ev.location) locationsSet.add(ev.location);
   }
+  const parseDayWeight = (d: string) => {
+    const match = d.match(/\d+/);
+    return match ? parseInt(match[0], 10) : 99;
+  };
+
+  const sortedDays = Array.from(daysSet).sort((a, b) => parseDayWeight(a) - parseDayWeight(b));
 
   return {
     totalEvents: allEvents.length,
     initialEvents: allEvents.slice(0, 100),
     tracks: Array.from(tracksSet).sort(),
-    days: Array.from(daysSet).sort(),
+    days: sortedDays,
     locations: Array.from(locationsSet).sort(),
     recentChanges,
   };
