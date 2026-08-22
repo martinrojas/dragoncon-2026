@@ -1,8 +1,9 @@
 import type { Context } from "hono";
+import { defineHandler } from "void";
 import { db, eq, inArray } from "void/db";
 import { events, friendships, userEvents, users } from "../../db/schema";
 
-export async function GET(c: Context) {
+export const GET = defineHandler(async (c: Context) => {
   const userId = c.req.query("userId");
   const friendId = c.req.query("friendId");
 
@@ -50,9 +51,9 @@ export async function GET(c: Context) {
     .where(inArray(users.id, friendIds));
 
   return c.json({ success: true, friends: friendUsers });
-}
+});
 
-export async function POST(c: Context) {
+export const POST = defineHandler(async (c: Context) => {
   try {
     const body = (await c.req.json().catch(() => ({}))) as {
       userId?: string;
@@ -97,4 +98,4 @@ export async function POST(c: Context) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ success: false, error: message }, 500);
   }
-}
+});

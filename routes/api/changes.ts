@@ -1,8 +1,9 @@
 import type { Context } from "hono";
+import { defineHandler } from "void";
 import { db, desc } from "void/db";
 import { eventChanges } from "../../db/schema";
 
-export async function GET(c: Context) {
+export const GET = defineHandler(async (c: Context) => {
   const limitParam = c.req.query("limit");
   const limit = limitParam ? parseInt(limitParam, 10) : 50;
 
@@ -17,4 +18,4 @@ export async function GET(c: Context) {
     count: changes.length,
     changes,
   });
-}
+});

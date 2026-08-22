@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787378527147,
+      "tag": "20260822060207_famous_nuke",
+      "breakpoints": true
+    }
+  ]
+}

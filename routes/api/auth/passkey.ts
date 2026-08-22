@@ -5,6 +5,7 @@ import {
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import type { Context } from "hono";
+import { defineHandler } from "void";
 import { db, eq } from "void/db";
 import { authenticators, users } from "../../../db/schema";
 
@@ -22,7 +23,7 @@ async function hashPassword(password: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function POST(c: Context) {
+export const POST = defineHandler(async (c: Context) => {
   try {
     const action = c.req.query("action");
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -221,4 +222,4 @@ export async function POST(c: Context) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ success: false, error: message }, 500);
   }
-}
+});

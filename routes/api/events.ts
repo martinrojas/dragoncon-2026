@@ -1,8 +1,9 @@
 import type { Context } from "hono";
+import { defineHandler } from "void";
 import { db, eq, like, or, sql } from "void/db";
 import { eventChanges, events } from "../../db/schema";
 
-export async function GET(c: Context) {
+export const GET = defineHandler(async (c: Context) => {
   const id = c.req.query("id");
   const search = c.req.query("search")?.trim();
   const day = c.req.query("day");
@@ -83,4 +84,4 @@ export async function GET(c: Context) {
       locations: Array.from(locationsSet).sort(),
     },
   });
-}
+});
