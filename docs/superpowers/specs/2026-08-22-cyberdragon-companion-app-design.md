@@ -102,21 +102,28 @@ Bring the full offline design experience from `reference/CyberDragon Companion A
 
 ---
 
-### 3.4 Profile, Con Preferences & Digital Badge Card
+### 3.4 Profile, Authentication & Con Preferences
 
 - **Profile View (`ProfileScreen`):**
-  - **Digital Con Badge:** Glass card featuring user initials avatar (purple-to-gold gradient fill), display name, and formatted badge identifier (e.g., `BADGE DC-40-118824`).
+  - **Logged-Out Authentication Flow:**
+    - Prominent CyberDragon Glass Auth Card.
+    - **⚡ 1-Click Passkey Login** button (with Touch ID / 1Password support).
+    - **Quick Passkey Registration** (1-step account creation).
+    - **Password Login / Registration** form toggle.
+  - **Logged-In User State:**
+    - **Digital Con Badge Card:** Glass card featuring user initials avatar (purple-to-gold gradient fill), display name, handle (`@username`), and formatted badge identifier (e.g., `BADGE DC-40-118824`).
+    - **Passkey Management:** `🔑 + Register Passkey` button to add WebAuthn biometric login to an existing account.
+    - **Sign Out Button:** Clears session and local storage.
   - **Alert Toggles:**
     - `Panel Reminders`: Enable/disable 15-minute start warnings.
     - `Walk-Time Warnings`: Enable/disable warnings when venue transition is tight ($< 5$ min margin).
     - `Haptic Feedback`: Toggle touch haptics.
-  - **Display Preferences:**
+  - **Display & Venue Preferences:**
     - `Time Format`: Select between `12-hour (2:30 PM)` and `24-hour (14:30)`.
-    - `Home Venue`: Baseline hotel (e.g. Hyatt, Marriott, Hilton) used to calculate initial morning walk times.
+    - `Home Venue`: Baseline hotel (e.g. Hyatt, Marriott, Hilton, Sheraton, Westin) used to calculate initial morning walk times.
   - **Offline Cache Status:**
     - Sync progress meter showing offline status ("Synced 4 min ago").
     - `Sync Now` trigger and `Clear My Schedule` safety prompt.
-
 ---
 
 ## 4. File Changes & Data Flow
