@@ -3,6 +3,20 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-22 — Knowledge Bundle Maintained
+
+- **Type:** `maintain` pass by `docsmith/1.3.0`.
+- **Audited & Maintained:**
+  - `docs/SYSTEM_DESIGN.md`: Updated Section 3 (Void head management, viewport scaling, safe-area CSS tokens) and Section 8 (custom domain `dragoncon.martinrojas.dev`, observability). Re-verified against live code.
+  - `docs/guides/deployment-runbook.md`: Updated sources citation (`wrangler.jsonc:1-41`).
+  - `docs/index.md`: Verified all 5 concepts and 2 harvested sources; confirmed OKF v0.2 compliance.
+- **Live Verifications:**
+  - Unit tests: `pnpm test` executed and verified (8/8 tests pass).
+  - Production build: `pnpm build` verified (SSR Worker and static PWA assets bundle clean).
+  - Mobile viewport test: Verified against local dev server on Pixel mobile dimensions ($412\times 924$, scale $2.625$).
+
+---
+
 ## 2026-08-22 — Mobile Viewport Scaling & Responsive Bottom Bar
 
 - **Type:** Bugfix / Responsive Design.
@@ -59,4 +73,4 @@ Entries are listed in reverse chronological order (newest first).
   - Production build: `pnpm build` verified (SSR Worker and static PWA assets bundle clean).
   - Cloudflare deployment: Verified live on `https://dragoncon-2026.martin-d28.workers.dev` with live D1 database `dragoncon-2026-db`.
 
-Docs-freshness: head=8a4e77b718b420e81fda3247252a5f7dda3c5b70 date=2026-08-22 pass=establish
+Docs-freshness: head=2a0635de1a8932487629464d7443233e16157e0f date=2026-08-22 pass=maintain

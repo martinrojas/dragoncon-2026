@@ -3,8 +3,8 @@ type: System Design
 title: System Design — CyberDragon Companion App
 description: Architecture, subsystems, data model, APIs, and Cloudflare deployment for the Dragon Con 2026 Companion PWA.
 tags: [architecture, evergreen, pwa, cloudflare, react19]
-generated: { by: docsmith/1.3.0, at: 2026-08-22T06:15:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-22T06:15:00Z }]
+generated: { by: docsmith/1.3.0, at: 2026-08-22T07:25:00Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-22T07:25:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -18,8 +18,8 @@ sources:
     resource: routes/api/events.ts:1-87
     title: Hono API routing and defineHandler export convention
   - id: wrangler-config
-    resource: wrangler.jsonc:1-19
-    title: Cloudflare Workers and D1 database binding configuration
+    resource: wrangler.jsonc:1-41
+    title: Cloudflare Workers, custom domain, and D1 database binding configuration
   - id: package-manifest
     resource: package.json:1-40
     title: Real dependency versions and scripts
@@ -87,10 +87,10 @@ flowchart TD
 ### Technology Stack
 - **Frontend:** React `19.2.4`, React DOM `19.2.4`, React Compiler (`babel-plugin-react-compiler` `1.0.0`), `@void/react` `0.10.12`.
 - **Styling & PWA:** Custom CyberDragon Glass CSS (`public/cyberdragon.css`), Web App Manifest (`public/manifest.webmanifest`), Service Worker (`public/sw.js`).
+- **Head & Responsive Design:** Centralized document `<head>` management in `void.json` (`width=device-width, initial-scale=1, viewport-fit=cover`), `-webkit-text-size-adjust: 100%`, and hardware safe-area insets (`env(safe-area-inset-bottom)`, `env(safe-area-inset-top)`).
 - **API & Server:** Hono `4.11.9`, `@simplewebauthn/server` `13.3.2`, `@simplewebauthn/browser` `13.3.0`, Cheerio `1.2.0`.
 - **Database & Tooling:** Cloudflare D1 (SQLite), Drizzle ORM (via `void/db`), Vite `8.0.10`, Vite+ `0.1.21`, TypeScript `5.9.3`.
 - **Infrastructure:** Cloudflare Workers (`workerd` runtime compatibility date `2026-08-22`).
-
 ---
 
 ## 4. Module Design
@@ -222,8 +222,8 @@ flowchart LR
 ```
 
 - **Environment:** Cloudflare Workers Serverless Runtime.
-- **Configuration:** `wrangler.jsonc` specifies worker name `dragoncon-2026`, D1 database ID `c3ce3824-f470-45fb-ae37-f6e899a4bd48`, and static assets directory `dist/client`.
-- **Live URL:** `https://dragoncon-2026.martin-d28.workers.dev`
+- **Configuration:** `wrangler.jsonc` specifies worker name `dragoncon-2026`, D1 database ID `c3ce3824-f470-45fb-ae37-f6e899a4bd48`, custom domain `dragoncon.martinrojas.dev`, observability logging, and static assets directory `dist/client`.
+- **Production URL:** `https://dragoncon.martinrojas.dev` (fallback: `https://dragoncon-2026.martin-d28.workers.dev`)
 
 For step-by-step deployment and provisioning: `docs/guides/deployment-runbook.md`.
 
