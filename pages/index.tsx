@@ -874,8 +874,6 @@ export default function HomePage({
 
   return (
     <>
-      <link rel="stylesheet" href="/cyberdragon.css" />
-
       <div
         style={{
           minHeight: "100vh",
