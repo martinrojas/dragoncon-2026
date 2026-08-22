@@ -254,7 +254,7 @@ export default function HomePage({
     }
 
     // Cloudflare Web Analytics (SPA mode)
-    const cfBeaconToken = import.meta.env.VITE_CF_BEACON_TOKEN;
+    const cfBeaconToken = import.meta.env.VITE_CF_BEACON_TOKEN || "2a8a89c63cce42d3b991ddb0b398336a";
     if (cfBeaconToken && !document.querySelector('script[src*="cloudflareinsights.com/beacon"]')) {
       const script = document.createElement("script");
       script.defer = true;
