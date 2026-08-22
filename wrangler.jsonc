@@ -11,7 +11,7 @@
       "custom_domain": true
     }
   ],
-  "workers_dev": false,
+  "workers_dev": true,
   "observability": {
     "enabled": false,
     "head_sampling_rate": 1,
