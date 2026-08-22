@@ -11,8 +11,11 @@ sources:
   - id: wrangler-config
     resource: wrangler.jsonc:1-19
     title: Cloudflare Workers and D1 database binding configuration
+  - id: ci-workflow
+    resource: .github/workflows/ci.yml:1-33
+    title: Pull request and push test/build CI workflow
   - id: deploy-workflow
-    resource: .github/workflows/deploy.yml:1-28
+    resource: .github/workflows/deploy.yml:1-45
     title: Cloudflare deployment CI/CD workflow
   - id: package-scripts
     resource: package.json:10-15
@@ -89,13 +92,15 @@ When altering tables in `db/schema.ts`:
 
 ---
 
-## 5. GitHub Actions Continuous Deployment
+## 5. GitHub Actions Continuous Integration & Deployment
 
-The repository includes `.github/workflows/deploy.yml` [^deploy-workflow].
+The repository includes two automated workflows:
+1. **CI (`.github/workflows/ci.yml`)**: Runs on pull requests and pushes to `main`. Automatically installs dependencies, executes unit tests (`pnpm test`), and runs the production build (`pnpm build`).
+2. **Deploy (`.github/workflows/deploy.yml`)**: Runs on push to `main` (and manual dispatch). Validates tests and builds before deploying the Worker and applying remote D1 migrations via `pnpm run deploy`.
 
 ### Required Secrets
 In GitHub Settings $\to$ Secrets and variables $\to$ Actions:
-- `CLOUDFLARE_API_TOKEN`: Cloudflare API token.
+- `CLOUDFLARE_API_TOKEN`: Cloudflare API token with *Workers Scripts: Edit* and *D1: Edit* permissions.
 - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account ID.
 
 Pushing to `main` executes the deployment workflow automatically.

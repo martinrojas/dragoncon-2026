@@ -4,6 +4,16 @@ Entries are listed in reverse chronological order (newest first).
 
 ---
 
+## 2026-08-22 — GitHub Actions CI & CD Setup
+
+- **Type:** Infrastructure / DevOps.
+- **Configured Workflows:**
+  - `.github/workflows/ci.yml`: Automated CI workflow for pull requests and main branch pushes. Installs dependencies (`pnpm install --frozen-lockfile`), runs walk-time and capacity heuristic unit tests (`pnpm test`), and verifies production builds (`pnpm build`).
+  - `.github/workflows/deploy.yml`: Updated action pins (`actions/checkout@v6`, `pnpm/action-setup@v5`, `actions/setup-node@v6`), added pre-deploy test/build verification, and enabled `workflow_dispatch`.
+- **Documentation:** Updated `docs/guides/deployment-runbook.md` with CI workflow details.
+
+---
+
 ## 2026-08-22 — Knowledge Bundle Established
 
 - **Type:** `establish` pass by `docsmith/1.3.0`.
