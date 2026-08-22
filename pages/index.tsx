@@ -463,6 +463,44 @@ export default function HomePage({
     return null;
   };
 
+  // Helper to execute explicit schedule mutations (add/remove/status restore) without stale closure toggle issues
+  const executeScheduleMutation = async (
+    eventId: string,
+    action: "add" | "remove",
+    status: "going" | "interested" = "going",
+  ) => {
+    if (!currentUser) return;
+
+    setUserEventStatusMap((prev) => {
+      const updated = { ...prev };
+      if (action === "remove") {
+        delete updated[eventId];
+      } else {
+        updated[eventId] = status;
+      }
+      return updated;
+    });
+
+    try {
+      const res = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          eventId,
+          action,
+          status,
+        }),
+      });
+      const data = (await res.json()) as { success: boolean };
+      if (data.success) {
+        loadUserAgenda(currentUser.id);
+      }
+    } catch (e: unknown) {
+      console.error("Failed to update schedule", e);
+    }
+  };
+
   // Toggle Agenda Event ('going' | 'interested' | remove) with Toast Notification Engine
   const handleToggleEvent = async (
     eventId: string,
@@ -477,14 +515,7 @@ export default function HomePage({
     const currentStatus = userEventStatusMap[eventId];
     const isRemoving = currentStatus === newStatus || (currentStatus && !newStatus);
     const action = isRemoving ? "remove" : "add";
-
-    const updatedMap = { ...userEventStatusMap };
-    if (isRemoving) {
-      delete updatedMap[eventId];
-    } else {
-      updatedMap[eventId] = newStatus;
-    }
-    setUserEventStatusMap(updatedMap);
+    const statusToRestore = currentStatus || "going";
 
     // Find the event object for toast messaging
     const targetEvent =
@@ -495,7 +526,7 @@ export default function HomePage({
     if (!suppressToast && targetEvent) {
       if (isRemoving) {
         showToast(`Removed "${targetEvent.title}" from your schedule.`, "ok", () => {
-          handleToggleEvent(eventId, currentStatus || "going", true);
+          executeScheduleMutation(eventId, "add", statusToRestore);
         });
       } else {
         const overlappingEvent = checkEventOverlap(targetEvent, eventId);
@@ -504,35 +535,18 @@ export default function HomePage({
             `Added — overlaps "${overlappingEvent.title}".`,
             "warn",
             () => {
-              handleToggleEvent(eventId, newStatus, true);
+              executeScheduleMutation(eventId, "remove");
             },
           );
         } else {
           showToast(`Added to your schedule.`, "ok", () => {
-            handleToggleEvent(eventId, newStatus, true);
+            executeScheduleMutation(eventId, "remove");
           });
         }
       }
     }
 
-    try {
-      const res = await fetch("/api/schedule", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          eventId,
-          action,
-          status: newStatus,
-        }),
-      });
-      const data = (await res.json()) as { success: boolean };
-      if (data.success) {
-        loadUserAgenda(currentUser.id);
-      }
-    } catch (e: unknown) {
-      console.error("Failed to update schedule", e);
-    }
+    await executeScheduleMutation(eventId, action, newStatus);
   };
 
   // Clear Entire User Schedule
@@ -668,7 +682,7 @@ export default function HomePage({
       .filter((ev) => (ev.startsAt || "") < (targetItem.startsAt || ""))
       .pop();
 
-    return preceding?.location || daySaved[daySaved.length - 1]?.location || homeVenue;
+    return preceding?.location || homeVenue;
   };
 
   // Calculate sum of walk times between consecutive saved panels for a given day
