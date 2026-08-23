@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
-import { db, eq } from "void/db";
-import { eventChanges, events } from "../db/schema";
+import { and, db, eq } from "void/db";
+import { eventChanges, events } from "../db/schema.ts";
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
@@ -9,15 +9,24 @@ const USER_AGENT =
 export interface IngestOptions {
   days?: string[];
   maxDetailFetches?: number;
+  mode?: "sync" | "dry-run" | "hard-resync";
   onProgress?: (msg: string) => void;
 }
 
+export interface IngestDiffSummary {
+  createdEvents: Array<{ id: string; title: string; location: string | null; timeString: string | null }>;
+  updatedEvents: Array<{ id: string; title: string; changes: string }>;
+  deletedEvents: Array<{ id: string; title: string }>;
+}
+
 export interface IngestResult {
+  mode: "sync" | "dry-run" | "hard-resync";
   totalScraped: number;
   created: number;
   updated: number;
   deleted: number;
   errors: number;
+  diffSummary: IngestDiffSummary;
   log: string[];
 }
 
@@ -85,19 +94,43 @@ async function computeHash(data: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Computes a stable content hash for an event from its user-facing fields.
+ * Two events with identical title/location/timeString/description hash the
+ * same, regardless of internal metadata (track, parsed timestamps, etc.).
+ */
+export async function computeContentHash(
+  title: string,
+  location?: string | null,
+  timeString?: string | null,
+  description?: string | null,
+): Promise<string> {
+  return computeHash(`${title}|${location ?? ""}|${timeString ?? ""}|${description ?? ""}`);
+}
+
 export async function runIngestion(options: IngestOptions = {}): Promise<IngestResult> {
+  const mode = options.mode ?? "sync";
+  const isDryRun = mode === "dry-run";
+  const isHardResync = mode === "hard-resync";
+
   const logs: string[] = [];
   const log = (msg: string) => {
     logs.push(msg);
     if (options.onProgress) options.onProgress(msg);
   };
 
-  log("Starting Dragon Con 2026 schedule ingestion...");
+  log(`Starting Dragon Con 2026 schedule ingestion (mode: ${mode})...`);
 
   let createdCount = 0;
   let updatedCount = 0;
   let deletedCount = 0;
   let errorCount = 0;
+
+  const diffSummary: IngestDiffSummary = {
+    createdEvents: [],
+    updatedEvents: [],
+    deletedEvents: [],
+  };
 
   const daysToFetch =
     options.days && options.days.length > 0
@@ -151,11 +184,36 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
 
     log(`Found ${eventLinks.length} events for day ${dayHeader}`);
 
+    // hard-resync wipes every existing record for this day before
+    // re-inserting freshly scraped events, so the per-item logic below
+    // always treats each scraped item as newly created.
+    if (isHardResync) {
+      const existingForDay = await db.select().from(events).where(eq(events.day, dayHeader));
+      if (existingForDay.length > 0) {
+        for (const ev of existingForDay) {
+          diffSummary.deletedEvents.push({ id: ev.id, title: ev.title });
+          deletedCount++;
+          await db.insert(eventChanges).values({
+            eventId: ev.id,
+            eventTitle: ev.title,
+            changeType: "deleted",
+            diffDetails: JSON.stringify({ reason: "hard-resync wipe" }),
+            detectedAt: new Date().toISOString(),
+          });
+        }
+        await db.delete(events).where(eq(events.day, dayHeader));
+        log(`Hard-resync: wiped ${existingForDay.length} existing event(s) for ${dayHeader}`);
+      }
+    }
+
+    const scrapedIdsForDay = new Set<string>();
+
     const limit = options.maxDetailFetches ?? eventLinks.length;
     const targets = eventLinks.slice(0, limit);
 
     for (const item of targets) {
       scrapedEventIds.add(item.id);
+      scrapedIdsForDay.add(item.id);
       const detailUrl = `${BASE_URL}/event/${item.id}`;
 
       try {
@@ -202,54 +260,29 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
 
         const { startsAt, endsAt, durationMinutes } = parseDateTime(dateStr, durationStr);
 
-        const contentRaw = `${item.title}|${location}|${track}|${startsAt}|${endsAt}|${description}|${speakers.join(",")}`;
-        const contentHash = await computeHash(contentRaw);
+        const contentHash = await computeContentHash(item.title, location, item.timeStr, description);
 
-        // Check existing record
-        const [existing] = await db.select().from(events).where(eq(events.id, item.id));
+        // hard-resync already wiped this day's rows above, so `existing`
+        // naturally comes back empty and every item takes the create path.
+        const existing = isHardResync
+          ? undefined
+          : (await db.select().from(events).where(eq(events.id, item.id)))[0];
 
         const now = new Date().toISOString();
 
         if (!existing) {
-          await db.insert(events).values({
+          diffSummary.createdEvents.push({
             id: item.id,
             title: item.title,
-            description,
-            location,
-            track,
-            startsAt,
-            endsAt,
-            durationMinutes,
-            day: dayHeader,
-            timeString: item.timeStr,
-            speakers: JSON.stringify(speakers),
-            contentHash,
-            firstSeenAt: now,
-            lastSeenAt: now,
-            isDeleted: 0,
+            location: location || null,
+            timeString: item.timeStr || null,
           });
-
-          await db.insert(eventChanges).values({
-            eventId: item.id,
-            eventTitle: item.title,
-            changeType: "created",
-            diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
-            detectedAt: now,
-          });
-
           createdCount++;
-        } else if (existing.contentHash !== contentHash || existing.isDeleted === 1) {
-          const diffs: Record<string, { old: unknown; new: unknown }> = {};
-          if (existing.title !== item.title) diffs.title = { old: existing.title, new: item.title };
-          if (existing.location !== location) diffs.location = { old: existing.location, new: location };
-          if (existing.track !== track) diffs.track = { old: existing.track, new: track };
-          if (existing.startsAt !== startsAt) diffs.startsAt = { old: existing.startsAt, new: startsAt };
-          if (existing.endsAt !== endsAt) diffs.endsAt = { old: existing.endsAt, new: endsAt };
-          if (existing.description !== description) diffs.description = { old: existing.description, new: description };
+          log(`[CREATE] ${item.title}`);
 
-          await db
-            .update(events)
-            .set({
+          if (!isDryRun) {
+            await db.insert(events).values({
+              id: item.id,
               title: item.title,
               description,
               location,
@@ -261,21 +294,67 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
               timeString: item.timeStr,
               speakers: JSON.stringify(speakers),
               contentHash,
+              firstSeenAt: now,
               lastSeenAt: now,
               isDeleted: 0,
-            })
-            .where(eq(events.id, item.id));
+            });
 
-          await db.insert(eventChanges).values({
-            eventId: item.id,
-            eventTitle: item.title,
-            changeType: existing.isDeleted ? "uncancelled" : "updated",
-            diffDetails: JSON.stringify(diffs),
-            detectedAt: now,
+            await db.insert(eventChanges).values({
+              eventId: item.id,
+              eventTitle: item.title,
+              changeType: isHardResync ? "hard-resync" : "created",
+              diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
+              detectedAt: now,
+            });
+          }
+        } else if (existing.contentHash !== contentHash || existing.isDeleted === 1) {
+          const diffs: Record<string, { old: unknown; new: unknown }> = {};
+          if (existing.title !== item.title) diffs.title = { old: existing.title, new: item.title };
+          if (existing.location !== location) diffs.location = { old: existing.location, new: location };
+          if (existing.timeString !== item.timeStr) diffs.timeString = { old: existing.timeString, new: item.timeStr };
+          if (existing.track !== track) diffs.track = { old: existing.track, new: track };
+          if (existing.startsAt !== startsAt) diffs.startsAt = { old: existing.startsAt, new: startsAt };
+          if (existing.endsAt !== endsAt) diffs.endsAt = { old: existing.endsAt, new: endsAt };
+          if (existing.description !== description) diffs.description = { old: existing.description, new: description };
+
+          const changeType = existing.isDeleted ? "uncancelled" : "updated";
+          diffSummary.updatedEvents.push({
+            id: item.id,
+            title: item.title,
+            changes: Object.keys(diffs).join(", ") || "content",
           });
-
           updatedCount++;
-        } else {
+          log(`[UPDATE] ${item.title}: ${Object.keys(diffs).join(", ") || "content"}`);
+
+          if (!isDryRun) {
+            await db
+              .update(events)
+              .set({
+                title: item.title,
+                description,
+                location,
+                track,
+                startsAt,
+                endsAt,
+                durationMinutes,
+                day: dayHeader,
+                timeString: item.timeStr,
+                speakers: JSON.stringify(speakers),
+                contentHash,
+                lastSeenAt: now,
+                isDeleted: 0,
+              })
+              .where(eq(events.id, item.id));
+
+            await db.insert(eventChanges).values({
+              eventId: item.id,
+              eventTitle: item.title,
+              changeType,
+              diffDetails: JSON.stringify(diffs),
+              detectedAt: now,
+            });
+          }
+        } else if (!isDryRun) {
           await db
             .update(events)
             .set({ lastSeenAt: now, isDeleted: 0 })
@@ -286,6 +365,35 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
         errorCount++;
       }
     }
+
+    // sync/dry-run: anything previously tracked for this day that was not
+    // re-scraped is treated as removed from the schedule.
+    if (mode === "sync" || isDryRun) {
+      const missing = await db
+        .select()
+        .from(events)
+        .where(and(eq(events.day, dayHeader), eq(events.isDeleted, 0)));
+
+      for (const ev of missing) {
+        if (scrapedIdsForDay.has(ev.id)) continue;
+
+        diffSummary.deletedEvents.push({ id: ev.id, title: ev.title });
+        deletedCount++;
+        log(`[DELETE] ${ev.title} no longer found in ${dayHeader} listing`);
+
+        if (!isDryRun) {
+          const now = new Date().toISOString();
+          await db.update(events).set({ isDeleted: 1, lastSeenAt: now }).where(eq(events.id, ev.id));
+          await db.insert(eventChanges).values({
+            eventId: ev.id,
+            eventTitle: ev.title,
+            changeType: "deleted",
+            diffDetails: JSON.stringify({ reason: `missing from ${dayHeader} listing` }),
+            detectedAt: now,
+          });
+        }
+      }
+    }
   }
 
   log(
@@ -293,11 +401,13 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
   );
 
   return {
+    mode,
     totalScraped: scrapedEventIds.size,
     created: createdCount,
     updated: updatedCount,
     deleted: deletedCount,
     errors: errorCount,
+    diffSummary,
     log: logs,
   };
 }
