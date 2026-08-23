@@ -3,7 +3,7 @@ type: Guide
 title: Cloudflare Deployment & D1 Operations Runbook
 description: Step-by-step runbook for provisioning, migrating, and deploying the CyberDragon app on Cloudflare Workers and D1.
 tags: [guide, runbook, cloudflare, deployment, d1, ci]
-generated: { by: docsmith/1.3.0, at: 2026-08-22T07:25:00Z }
+generated: { by: docsmith/1.3.0, at: 2026-08-23T15:40:00Z }
 verified: [{ by: docsmith/1.3.0, at: 2026-08-22T07:25:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
@@ -20,6 +20,9 @@ sources:
   - id: package-scripts
     resource: package.json:10-15
     title: Deployment and database migration npm scripts
+  - id: make-admin-script
+    resource: scripts/make-admin.ts:1-65
+    title: Admin promotion CLI script
 ---
 
 # Cloudflare Deployment & D1 Operations Runbook
@@ -117,3 +120,20 @@ Pushing to `main` executes the deployment workflow automatically.
 2. **Configure Token:**
    - In `.env` (or CI environment variables): set `VITE_CF_BEACON_TOKEN=<your-token>`.
    - The application automatically injects the Cloudflare Web Analytics beacon script on client mount with `"spa": true` for client-side navigation tracking.
+
+---
+
+## 7. Administrator Role Provisioning
+
+To promote any registered user account to Administrator for access to `/admin` and ingestion controls [^make-admin-script]:
+
+```bash
+pnpm run make-admin <username>
+```
+
+- **Local Dev Execution:** The tool automatically identifies the active SQLite database in `.void/v3/d1/miniflare-D1DatabaseObject/` matching the latest WAL/SHM mtime and migrated `role` column.
+- **Manual Database Override:** Set `D1_SQLITE_PATH=/path/to/db.sqlite` if targeting a specific database file.
+- **Remote Production:** In production D1, update the user row directly via Wrangler:
+  ```bash
+  pnpm exec wrangler d1 execute dragoncon-2026-db --remote --command "UPDATE users SET role = 'admin' WHERE username = '<username>';"
+  ```
