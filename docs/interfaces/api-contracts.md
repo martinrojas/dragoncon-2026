@@ -41,6 +41,9 @@ sources:
   - id: admin-runs-route
     resource: routes/api/admin/runs.ts:1-16
     title: Admin historical ingestion runs query handler
+  - id: feedback-route
+    resource: routes/api/feedback.ts:1-68
+    title: Attendee feedback submission and admin review handler
 ---
 
 # CyberDragon Hono API Contracts
@@ -212,3 +215,70 @@ Administrative health checks, metrics, and audit history [^admin-stats-route] [^
 - **`GET /api/admin/stats`**: Returns active event counts, deleted event counts, per-day breakdowns, total users, and latest ingestion run summary.
 - **`GET /api/admin/runs`**: Returns 50 most recent ingestion executions with mode, status, stats summary, and completed timestamps.
 - **`GET /api/admin/runs/:id`**: Returns a single ingestion execution record including full captured console logs.
+
+---
+
+## 7. Attendee Feedback API (`/api/feedback`)
+
+Allows attendees to submit bug reports or suggestions from the companion app, and allows administrators to retrieve submitted feedback [^feedback-route].
+
+### `POST /api/feedback`
+
+- **Auth:** Public (unauthenticated attendees or signed-in users can submit).
+- **Request Body:**
+  ```json
+  {
+    "kind": "bug | idea",
+    "message": "string (1-2000 chars)",
+    "contact": "string (optional, max 200 chars)",
+    "userId": "string (optional)",
+    "username": "string (optional)",
+    "appVersion": "string (optional)",
+    "pageUrl": "string (optional)"
+  }
+  ```
+- **Validation Rules:**
+  - `kind` must be exactly `"bug"` or `"idea"`.
+  - `message` is required, non-empty, and capped at 2000 characters.
+  - `contact` is optional, trimmed, and capped at 200 characters (stored as `null` if blank).
+  - `userAgent` is captured server-side from the `User-Agent` request header.
+- **Response Shape:**
+  - Success (`200 OK`):
+    ```json
+    {
+      "success": true,
+      "message": "Thanks — your note is in."
+    }
+    ```
+  - Client Error (`400 Bad Request`):
+    ```json
+    {
+      "success": false,
+      "error": "kind must be bug or idea"
+    }
+    ```
+
+### `GET /api/feedback`
+
+- **Auth:** Requires Bearer token or session cookie with `role: "admin"`. Returns `401 Unauthorized` if unauthenticated, `403 Forbidden` if non-admin.
+- **Response Shape (`200 OK`):**
+  ```json
+  {
+    "success": true,
+    "feedback": [
+      {
+        "id": "uuid string",
+        "userId": "string | null",
+        "username": "string | null",
+        "kind": "bug | idea",
+        "message": "string",
+        "contact": "string | null",
+        "appVersion": "string | null",
+        "userAgent": "string | null",
+        "pageUrl": "string | null",
+        "status": "new | reviewed",
+        "createdAt": "ISO8601 timestamp"
+      }
+    ]
+  }
+  ```

@@ -3,6 +3,21 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-23 — PWA Management & Attendee Feedback Subsystem
+
+- **Type:** Feature / UX Enhancement.
+- **Changes:**
+  - `lib/version.ts`: Added canonical `APP_VERSION = "1.0.0"` exported constant, synchronizing footer display and feedback payloads.
+  - `db/schema.ts` & `db/migrations/20260823193024_tough_catseye.sql`: Added `feedback` D1 table with support for bug reports and suggestions.
+  - `routes/api/feedback.ts`: Implemented `POST /api/feedback` (public submission, length & kind validation, User-Agent header capture) and `GET /api/feedback` (adminGuard protected).
+  - `components/AppStoragePanel.tsx`: Created plain-English PWA storage management panel with Add to Home Screen (beforeinstallprompt + iOS fallback), Save For Offline (warming caches with shell & all 11 map PNGs), Free Up Space (cache-only wipe preserving auth/settings), Check For Updates, and status readout.
+  - `components/FeedbackPanel.tsx`: Built in-app feedback submission form with bug/idea segmented picker, 2000-char live counter, and instant visual confirmation.
+  - `pages/index.tsx`: Integrated both panels into signed-in Profile view; captured `beforeinstallprompt` and standalone mode in top-level mount effect; removed obsolete `OFFLINE CACHE` panel.
+  - `pages/admin.tsx`: Added `💬 ATTENDEE FEEDBACK` panel for administrative review of submissions.
+  - `tests/feedback.test.ts`: Added 8 test cases verifying validation, contact normalisation, 401/403 access control, and database persistence (81/81 tests pass).
+  - `docs/interfaces/api-contracts.md`: Documented `/api/feedback` endpoints.
+
+---
 ## 2026-08-23 — Offline Venue Floor Plans & Core-Apps Integration
 
 - **Type:** Feature / UX Enhancement.
