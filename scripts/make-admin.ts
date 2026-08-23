@@ -27,8 +27,9 @@ export async function makeAdmin(username: string): Promise<{ success: boolean; m
  * main `.sqlite` file's own mtime can lag behind a database that's still
  * "live". Multiple `.sqlite` files can also accumulate across dev-server
  * restarts/schema resets, including stale pre-migration schemas; only a
- * candidate that actually has a `users` table is eligible, and among those
- * the one with the most recently modified file (main or WAL/SHM sidecar) is
+ * candidate that actually has a `users` table with a `role` column is
+ * eligible, and among those the one with the most recently modified file
+ * (main or WAL/SHM sidecar) is
  * the database currently backing the dev server.
  *
  * Set `D1_SQLITE_PATH` to bypass this discovery entirely and point directly
@@ -43,7 +44,9 @@ function candidateHasUsersTable(fullPath: string): boolean {
   }
   try {
     const row = sqliteDb.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
-    return row != null;
+    if (row == null) return false;
+    const columns = sqliteDb.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    return columns.some((column) => column.name === "role");
   } catch {
     return false;
   } finally {
