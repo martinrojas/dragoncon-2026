@@ -20,6 +20,8 @@ import { PanelDetailModal } from "../components/PanelDetailModal";
 import { calculateWalkTime } from "../lib/walktime";
 import { AppStoragePanel, type InstallPromptEvent } from "../components/AppStoragePanel";
 import { FeedbackPanel } from "../components/FeedbackPanel";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { setupGlobalErrorCatchers } from "../lib/errorReporting";
 import { APP_VERSION } from "../lib/version";
 import type { Props } from "./index.server";
 
@@ -318,7 +320,20 @@ export default function HomePage({
     const savedTimeFormat = localStorage.getItem("dc_time_format");
     if (savedTimeFormat === "12h" || savedTimeFormat === "24h") setTimeFormat(savedTimeFormat);
 
+    const cleanupErrorCatchers = setupGlobalErrorCatchers(() => {
+      const userStr = localStorage.getItem("dc_user");
+      if (userStr) {
+        try {
+          return JSON.parse(userStr);
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    }, APP_VERSION);
+
     return () => {
+      cleanupErrorCatchers();
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
@@ -946,7 +961,11 @@ export default function HomePage({
   ];
 
   return (
-    <>
+    <ErrorBoundary
+      contextName="MainApp"
+      user={currentUser ? { id: currentUser.id, username: currentUser.username } : null}
+      appVersion={APP_VERSION}
+    >
       <div
         style={{
           minHeight: "100dvh",
@@ -2240,6 +2259,6 @@ export default function HomePage({
           </button>
         </nav>
       </div>
-    </>
+    </ErrorBoundary>
   );
 }

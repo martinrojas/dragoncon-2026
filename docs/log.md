@@ -3,6 +3,34 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-23 — Knowledge Bundle Maintained & Sources Harvested
+
+- **Type:** `maintain` pass by `docsmith/1.3.0`.
+- **Audited & Maintained:**
+  - `docs/SYSTEM_DESIGN.md`: Updated Section 4, 5, 6, 9, 10 with feedback and error boundary modules, database entities (`feedback`), API routes (`/api/feedback`), and 91-test coverage across 11 test suites. Re-verified against live code.
+  - `docs/interfaces/api-contracts.md`: Documented `/api/feedback` endpoint schemas and automated error dispatch mechanism.
+  - `docs/guides/deployment-runbook.md`: Synchronized workflow citations and source line ranges.
+  - `docs/index.md`: Certified and removed all historical design specs and implementation plans; registered all 11 test suites.
+- **Harvest & Deletion:**
+  - Certified `docs/superpowers/specs/2026-08-22-cyberdragon-companion-app-design.md` as `✓ harvested (safe to delete)` and removed.
+  - Certified `docs/superpowers/plans/2026-08-22-cyberdragon-companion-app.md` as `✓ harvested (safe to delete)` and removed.
+  - Certified `docs/superpowers/specs/2026-08-23-admin-ingestion-dashboard-design.md` as `✓ harvested (safe to delete)` and removed.
+  - Certified `docs/superpowers/plans/2026-08-23-admin-ingestion-dashboard.md` as `✓ harvested (safe to delete)` and removed.
+- **Live Verifications:**
+  - Unit tests: `pnpm test` executed and verified (91/91 tests pass across 11 test suites).
+  - Production build: `pnpm build` verified (SSR Worker and static PWA client bundles compile clean).
+
+---
+## 2026-08-23 — Automated Bug Reporting & Global Error Boundary Recovery
+
+- **Type:** Feature / Reliability & Observability.
+- **Changes:**
+  - `lib/errorReporting.ts`: Implemented automated error dispatching to `/api/feedback`, stack trace sanitization & truncation (<=2000 chars, sensitive token & password redaction), deduplication by signature, session rate limiting (max 3/session), and `setupGlobalErrorCatchers` for `window.onerror` and `window.onunhandledrejection`.
+  - `components/ErrorBoundary.tsx`: Built CyberDragon glass fallback UI displaying diagnostic information, automated dispatch confirmation, and user recovery options ("Reload Application", "Try Again", "Clear Cached Data & Reload").
+  - `pages/index.tsx` & `pages/admin.tsx`: Wrapped main app and admin trees in `<ErrorBoundary>` and registered global error catchers on mount.
+  - `pages/admin.tsx`: Added `AUTO-REPORT` badge indicator on feedback items originating from automated reports.
+  - `tests/error-reporting.test.ts` & `tests/error-boundary.test.ts`: Added 10 unit tests verifying error formatting, token redaction, deduplication, rate limits, error boundary state machine, and silent failure resilience (91/91 tests pass).
+---
 ## 2026-08-23 — PWA Management & Attendee Feedback Subsystem
 
 - **Type:** Feature / UX Enhancement.
@@ -130,4 +158,4 @@ Entries are listed in reverse chronological order (newest first).
   - Production build: `pnpm build` verified (SSR Worker and static PWA assets bundle clean).
   - Cloudflare deployment: Verified live on `https://dragoncon-2026.martin-d28.workers.dev` with live D1 database `dragoncon-2026-db`.
 
-Docs-freshness: head=d427349910e602fadbd8221966fa4328b7887d88 date=2026-08-23 pass=maintain
+Docs-freshness: head=de18a14bc183dd6623ef5341d2eb5e4fbba1310c date=2026-08-23 pass=maintain

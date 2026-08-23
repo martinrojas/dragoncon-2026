@@ -3,13 +3,13 @@ type: API Contracts
 title: CyberDragon Hono API Contracts
 description: Request and response schemas for all file-based Hono endpoints on Cloudflare Workers.
 tags: [api-contracts, interfaces, hono, endpoints]
-generated: { by: docsmith/1.3.0, at: 2026-08-23T15:40:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-22T06:15:00Z }]
+generated: { by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
   - id: events-route
-    resource: routes/api/events.ts:1-87
+    resource: routes/api/events.ts:1-92
     title: Event search, filter, and facet handler
   - id: changes-route
     resource: routes/api/changes.ts:1-21
@@ -21,16 +21,16 @@ sources:
     resource: routes/api/friends.ts:1-101
     title: Squad friendship and schedule overlap handler
   - id: auth-route
-    resource: routes/api/auth.ts:1-79
+    resource: routes/api/auth.ts:1-83
     title: Password authentication handler
   - id: passkey-route
-    resource: routes/api/auth/passkey.ts:1-225
+    resource: routes/api/auth/passkey.ts:1-227
     title: WebAuthn passkey registration and login ceremony handler
   - id: ics-route
     resource: routes/api/export-ics.ts:1-75
     title: RFC 5545 iCalendar export handler
   - id: ingest-route
-    resource: routes/api/ingest.ts:1-22
+    resource: routes/api/ingest.ts:1-28
     title: Schedule scraping ingestion handler
   - id: admin-ingest-route
     resource: routes/api/admin/ingest.ts:1-72
@@ -42,7 +42,7 @@ sources:
     resource: routes/api/admin/runs.ts:1-16
     title: Admin historical ingestion runs query handler
   - id: feedback-route
-    resource: routes/api/feedback.ts:1-68
+    resource: routes/api/feedback.ts:1-69
     title: Attendee feedback submission and admin review handler
 ---
 
@@ -220,8 +220,9 @@ Administrative health checks, metrics, and audit history [^admin-stats-route] [^
 
 ## 7. Attendee Feedback API (`/api/feedback`)
 
-Allows attendees to submit bug reports or suggestions from the companion app, and allows administrators to retrieve submitted feedback [^feedback-route].
+Allows attendees to submit bug reports or suggestions from the companion app, and serves as the destination for automated crash reports dispatched by the client-side Error Boundary and global error listeners [^feedback-route].
 
+- **Automated Crash Reporting:** Dispatches runtime exceptions with `kind: "bug"`, `contact: "Automated Error Report"`, and sanitized error message + stack trace (Bearer tokens and passwords redacted, capped at 2000 characters).
 ### `POST /api/feedback`
 
 - **Auth:** Public (unauthenticated attendees or signed-in users can submit).

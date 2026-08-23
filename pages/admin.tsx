@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo, type FormEvent } from "react";
 import { AppBar } from "../components/CyberDragonUi";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { setupGlobalErrorCatchers } from "../lib/errorReporting";
+import { APP_VERSION } from "../lib/version";
 import type { Props } from "./admin.server";
-
 export interface User {
   id: string;
   username: string;
@@ -130,6 +132,22 @@ export default function AdminPage(props: Props) {
         // ignore parse error
       }
     }
+
+    const cleanupErrorCatchers = setupGlobalErrorCatchers(() => {
+      const userStr = localStorage.getItem("dc_user");
+      if (userStr) {
+        try {
+          return JSON.parse(userStr);
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    }, APP_VERSION);
+
+    return () => {
+      cleanupErrorCatchers();
+    };
   }, []);
 
   // Handle client-side login inside Admin Access Denied view
@@ -304,7 +322,12 @@ export default function AdminPage(props: Props) {
   // Access Denied Render
   if (!currentUser || currentUser.role !== "admin") {
     return (
-      <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", padding: "40px 20px" }}>
+      <ErrorBoundary
+        contextName="AdminAccess"
+        user={currentUser ? { id: currentUser.id, username: currentUser.username } : null}
+        appVersion={APP_VERSION}
+      >
+        <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", padding: "40px 20px" }}>
         <div style={{ maxWidth: 460, margin: "0 auto" }}>
           <div
             className="cd-glass-panel cd-notch"
@@ -426,12 +449,18 @@ export default function AdminPage(props: Props) {
           </div>
         </div>
       </div>
-    );
+    </ErrorBoundary>
+  );
   }
 
   // Render Authenticated Admin Dashboard
   return (
-    <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", paddingBottom: 60 }}>
+    <ErrorBoundary
+      contextName="AdminDashboard"
+      user={currentUser ? { id: currentUser.id, username: currentUser.username } : null}
+      appVersion={APP_VERSION}
+    >
+      <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", paddingBottom: 60 }}>
       {/* Header AppBar */}
       <AppBar
         eyebrow="CYBERDRAGON 2026 ADMIN"
@@ -1051,6 +1080,20 @@ export default function AdminPage(props: Props) {
                         >
                           {isBug ? "BUG" : "IDEA"}
                         </span>
+                        {item.contact === "Automated Error Report" && (
+                          <span
+                            className="cd-badge"
+                            style={{
+                              background: "rgba(168, 85, 247, 0.15)",
+                              color: "var(--purple-300)",
+                              border: "1px solid rgba(168, 85, 247, 0.3)",
+                              fontSize: 10,
+                              padding: "2px 6px",
+                            }}
+                          >
+                            AUTO-REPORT
+                          </span>
+                        )}
                         <span style={{ fontSize: 12, color: "var(--purple-300)", fontWeight: 500 }}>
                           @{item.username ?? "anonymous"}
                         </span>
@@ -1154,6 +1197,7 @@ export default function AdminPage(props: Props) {
           </div>
         )}
       </main>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
