@@ -967,7 +967,7 @@ export default function HomePage({
                   onClick: handleRunSync,
                 },
               ]}
-
+            />
             {/* DayStrip */}
             <DayStrip days={formattedDays} value={selectedDay} onChange={setSelectedDay} />
 

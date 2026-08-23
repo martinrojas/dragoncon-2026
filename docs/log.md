@@ -3,6 +3,23 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-23 — Admin Ingestion Dashboard Subsystem
+
+- **Type:** Feature / Admin Control Subsystem.
+- **Changes:**
+  - `db/schema.ts` & migrations: Added `role` (`"admin" | "user"`) to `users` and created `ingestion_runs` table for auditing sync runs.
+  - `scripts/make-admin.ts`: CLI utility (`pnpm run make-admin <username>`) for promoting users to admin with local D1 SQLite resolution.
+  - `lib/auth.ts`: Implemented `adminGuard` for route authorization and updated auth responses to include user roles.
+  - `lib/ingest.ts`: Enhanced ingestion engine with `sync`, `dry-run` (memory diff), and `hard-resync` (emergency overwrite) modes.
+  - `routes/api/admin/`: Created `/api/admin/ingest`, `/api/admin/stats`, `/api/admin/runs`, and `/api/admin/runs/:id` endpoints; guarded legacy `/api/ingest`.
+  - `pages/admin.tsx` & `pages/admin.server.ts`: Built interactive admin control center with live logs, diff summaries, and run history.
+  - `pages/index.tsx`: Added Admin navigation affordance for authenticated administrators.
+- **Live Verifications:**
+  - Unit tests: `pnpm test` executed and verified (66/66 tests pass across 7 test suites).
+  - Production build: `pnpm build` verified (SSR Worker and static PWA client bundles compile clean).
+  - Browser verification: Tested `/admin` access control and live `dry-run` ingestion execution in headless browser against local server.
+
+---
 ## 2026-08-22 — Knowledge Bundle Maintained
 
 - **Type:** `maintain` pass by `docsmith/1.3.0`.

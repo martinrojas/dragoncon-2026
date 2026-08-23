@@ -6,7 +6,7 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "test": "node --experimental-strip-types --test tests/walktime.test.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "make-admin": "node --experimental-strip-types scripts/make-admin.ts",
     "deploy": "void deploy --backend cloudflare",
     "deploy:provision": "void deploy --backend cloudflare --provision",
