@@ -60,12 +60,39 @@ test("makeAdmin returns error if username is only whitespace", async () => {
   assert.match(res.message, /username/i);
 });
 
+/**
+ * `void/db`'s default `db` export caches its drizzle instance on first
+ * property access (`_instance ??= drizzle(requireRuntimeBinding("DB"))`) and
+ * keeps using that instance for the lifetime of the process, ignoring
+ * whichever `DB` binding a later `withRuntimeEnv` call supplies. All tests
+ * that exercise the database path must therefore share one fake D1 binding
+ * so `makeAdmin`'s queries stay pointed at data these tests actually wrote.
+ */
+const sharedFakeD1 = createFakeD1();
+
 test("makeAdmin returns not-found for a user that does not exist", async () => {
-  const fakeD1 = createFakeD1();
-  await withRuntimeEnv({ DB: fakeD1 }, async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
     const res = await makeAdmin("ghost");
     assert.strictEqual(res.success, false);
     assert.match(res.message, /not found/i);
     assert.match(res.message, /ghost/);
+  });
+});
+
+test("makeAdmin promotes an existing user to admin", async () => {
+  sharedFakeD1
+    .prepare("INSERT INTO users (id, username, name, password_hash) VALUES (?, ?, ?, ?)")
+    .bind("user-1", "alice", "Alice Example", "hash")
+    .run();
+
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    const res = await makeAdmin("alice");
+    assert.strictEqual(res.success, true);
+    assert.match(res.message, /alice/i);
+
+    const row = sharedFakeD1.prepare("SELECT role FROM users WHERE username = ?").bind("alice").all().results[0] as {
+      role: string;
+    };
+    assert.strictEqual(row.role, "admin");
   });
 });
