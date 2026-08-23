@@ -965,7 +965,7 @@ export default function HomePage({
                 ...(currentUser?.role === "admin"
                   ? [
                       {
-                        icon: "sliders-horizontal",
+                        icon: "shield-user",
                         label: "Admin",
                         onClick: () => {
                           window.location.href = "/admin";
