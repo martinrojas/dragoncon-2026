@@ -21,7 +21,7 @@ sources:
     resource: package.json:10-15
     title: Deployment and database migration npm scripts
   - id: make-admin-script
-    resource: scripts/make-admin.ts:1-65
+    resource: scripts/make-admin.ts:1-169
     title: Admin promotion CLI script
 ---
 

@@ -33,13 +33,13 @@ sources:
     resource: routes/api/ingest.ts:1-22
     title: Schedule scraping ingestion handler
   - id: admin-ingest-route
-    resource: routes/api/admin/ingest.ts:1-75
+    resource: routes/api/admin/ingest.ts:1-72
     title: Admin schedule ingestion execution handler
   - id: admin-stats-route
-    resource: routes/api/admin/stats.ts:1-40
+    resource: routes/api/admin/stats.ts:1-52
     title: Admin database stats handler
   - id: admin-runs-route
-    resource: routes/api/admin/runs.ts:1-25
+    resource: routes/api/admin/runs.ts:1-16
     title: Admin historical ingestion runs query handler
 ---
 

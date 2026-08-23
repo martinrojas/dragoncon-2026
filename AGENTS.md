@@ -2,7 +2,7 @@
 
 > Mobile companion PWA for Dragon Con 2026 in Atlanta, GA. Built with React 19 SSR, Hono, Void, and Cloudflare Workers with D1 SQLite.
 
-Last updated: 2026-08-22
+Last updated: 2026-08-23
 
 ## Project Overview
 
@@ -55,7 +55,7 @@ Start here: `docs/SYSTEM_DESIGN.md`. Full map: `docs/index.md`.
 | When working on... | Read first |
 |---|---|
 | Venue walk times & capacity formulas | `docs/rules/walktime-and-venues.md` |
-| API endpoints & WebAuthn passkeys | `docs/interfaces/api-contracts.md` |
+| API endpoints, admin ingestion & WebAuthn passkeys | `docs/interfaces/api-contracts.md` |
 | Cloudflare Workers & D1 deployment | `docs/guides/deployment-runbook.md` |
 | Architecture decisions & rationale | `docs/decisions/0001-cloudflare-d1-self-host.md` |
 
