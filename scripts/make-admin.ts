@@ -22,20 +22,59 @@ export async function makeAdmin(username: string): Promise<{ success: boolean; m
 
 /**
  * Miniflare persists each local D1 database as a `<hash>.sqlite` file under
- * `.void/v3/d1/miniflare-D1DatabaseObject/`. Multiple files can accumulate
- * across dev-server restarts/schema resets; the most recently modified one is
+ * `.void/v3/d1/miniflare-D1DatabaseObject/`, plus WAL-mode `-wal`/`-shm`
+ * sidecar files that receive the actual writes between checkpoints — the
+ * main `.sqlite` file's own mtime can lag behind a database that's still
+ * "live". Multiple `.sqlite` files can also accumulate across dev-server
+ * restarts/schema resets, including stale pre-migration schemas; only a
+ * candidate that actually has a `users` table is eligible, and among those
+ * the one with the most recently modified file (main or WAL/SHM sidecar) is
  * the database currently backing the dev server.
+ *
+ * Set `D1_SQLITE_PATH` to bypass this discovery entirely and point directly
+ * at a specific sqlite file.
  */
+function candidateHasUsersTable(fullPath: string): boolean {
+  let sqliteDb: DatabaseSync;
+  try {
+    sqliteDb = new DatabaseSync(fullPath, { readOnly: true });
+  } catch {
+    return false;
+  }
+  try {
+    const row = sqliteDb.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+    return row != null;
+  } catch {
+    return false;
+  } finally {
+    sqliteDb.close();
+  }
+}
+
 function findLocalD1SqliteFile(): string | null {
+  if (process.env.D1_SQLITE_PATH) {
+    return process.env.D1_SQLITE_PATH;
+  }
+
   const dir = path.resolve(import.meta.dirname, "../.void/v3/d1/miniflare-D1DatabaseObject");
   if (!existsSync(dir)) return null;
 
   const candidates = readdirSync(dir)
     .filter((file) => file.endsWith(".sqlite") && file !== "metadata.sqlite")
-    .map((file) => {
-      const full = path.join(dir, file);
-      return { full, mtimeMs: statSync(full).mtimeMs };
-    })
+    .map((file) => path.join(dir, file))
+    .filter((full) => candidateHasUsersTable(full))
+    .map((full) => ({
+      full,
+      mtimeMs: Math.max(
+        ...["", "-wal", "-shm"].map((suffix) => {
+          try {
+            return statSync(`${full}${suffix}`).mtimeMs;
+          } catch {
+            return 0;
+          }
+        }),
+      ),
+    }))
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 
   return candidates[0]?.full ?? null;
