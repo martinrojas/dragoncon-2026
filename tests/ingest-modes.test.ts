@@ -14,7 +14,18 @@ const BASE_URL = "https://app.core-apps.com/dragoncon26";
  * that exercise the database path therefore share one fake D1 binding, and
  * use disjoint event ids / day names per scenario to avoid collisions.
  */
-function createFakeD1() {
+interface FakeD1BoundStatement {
+  raw(): unknown[][];
+  all(): { results: unknown[] };
+  run(): { success: boolean; meta: { changes: number; last_row_id: number } };
+}
+
+interface FakeD1Binding {
+  raw: DatabaseSync;
+  prepare(sqlText: string): { bind(...params: unknown[]): FakeD1BoundStatement };
+}
+
+function createFakeD1(): FakeD1Binding {
   const sqliteDb = new DatabaseSync(":memory:");
   sqliteDb.exec(`
     CREATE TABLE events (
@@ -178,6 +189,39 @@ function withMockedFetch<T>(routes: Map<string, string>, fn: () => Promise<T>): 
 
   return fn().finally(() => {
     global.fetch = original;
+  });
+}
+
+/**
+ * Forces the fake D1 binding's `run()` to throw for exactly one write whose
+ * bound parameters include `failingParam`, then restores normal behavior.
+ */
+function withFailingWrite<T>(
+  sqlite: FakeD1Binding,
+  failingParam: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const originalPrepare = sqlite.prepare;
+  sqlite.prepare = ((sqlText: string) => {
+    const stmt = originalPrepare(sqlText);
+    return {
+      bind(...params: unknown[]) {
+        const bound = stmt.bind(...params);
+        if (params.includes(failingParam)) {
+          return {
+            ...bound,
+            run() {
+              throw new Error(`simulated write failure for ${failingParam}`);
+            },
+          };
+        }
+        return bound;
+      },
+    };
+  }) as typeof sqlite.prepare;
+
+  return fn().finally(() => {
+    sqlite.prepare = originalPrepare;
   });
 }
 
@@ -371,7 +415,7 @@ test("sync mode inserts, updates, and soft-deletes against D1", async () => {
 // hard-resync mode: wipe targeted days then insert everything fresh
 // ---------------------------------------------------------------------------
 
-test("hard-resync mode wipes existing day records and re-inserts scraped events fresh", async () => {
+test("hard-resync mode wipes only the events it successfully re-parsed and re-inserts them fresh", async () => {
   const day = "HardDay";
   const dayParam = "hardday";
 
@@ -411,20 +455,20 @@ test("hard-resync mode wipes existing day records and re-inserts scraped events 
 
   assert.strictEqual(result.mode, "hard-resync");
   assert.strictEqual(result.totalScraped, 2);
-  // Both old rows were wiped; both scraped items land as fresh creates
-  // (including cccc1111, which reappeared in the upstream listing).
-  assert.strictEqual(result.deleted, 2);
+  // Only cccc1111 was re-scraped and re-parsed this run, so only it gets
+  // wiped and recreated. cccc2222 never appeared in this run's listing at
+  // all, so it is left untouched rather than being deleted outright.
+  assert.strictEqual(result.deleted, 1);
   assert.strictEqual(result.created, 2);
   assert.strictEqual(result.updated, 0);
 
-  assert.deepStrictEqual(
-    new Set(result.diffSummary.deletedEvents.map((e) => e.id)),
-    new Set(["cccc1111", "cccc2222"]),
-  );
+  assert.deepStrictEqual(result.diffSummary.deletedEvents.map((e) => e.id), ["cccc1111"]);
   assert.deepStrictEqual(new Set(result.diffSummary.createdEvents.map((e) => e.id)), new Set(["cccc1111", "cccc3333"]));
 
-  // cccc2222 never reappeared upstream, so it is gone entirely.
-  assert.strictEqual(getEvent("cccc2222"), undefined);
+  // cccc2222 was never re-parsed this run, so it survives unchanged.
+  const untouched = getEvent("cccc2222");
+  assert.strictEqual(untouched?.title, "Stale Title 2");
+  assert.strictEqual(untouched?.content_hash, "stale-hash-2");
 
   // cccc1111 was wiped and freshly re-inserted with the new scraped content.
   const refreshedRow = getEvent("cccc1111");
@@ -651,9 +695,9 @@ test("sync mode skips an empty update change record when an uncancelled event's 
   assert.strictEqual(revived?.is_deleted, 0);
 });
 
-test("hard-resync deletion counter excludes rows that were already soft-deleted", async () => {
-  const day = "DoubleCountDay";
-  const dayParam = "doublecountday";
+test("hard-resync skips the wipe entirely when nothing was successfully parsed", async () => {
+  const day = "EmptyParseDay";
+  const dayParam = "emptyparseday";
 
   insertEvent({
     id: "aaaa9001",
@@ -683,16 +727,141 @@ test("hard-resync deletion counter excludes rows that were already soft-deleted"
     withMockedFetch(routes, () => runIngestion({ mode: "hard-resync", days: [dayParam] })),
   );
 
-  // Both rows are physically wiped (nothing was re-scraped), but only the
+  // Nothing was scraped/parsed this run, so the wipe must be skipped
+  // entirely rather than deleting rows with no replacement data.
+  assert.strictEqual(result.deleted, 0);
+  assert.deepStrictEqual(result.diffSummary.deletedEvents, []);
+  assert.ok(getEvent("aaaa9001"));
+  assert.ok(getEvent("aaaa9002"));
+  assert.strictEqual(countEventChanges("aaaa9001"), 0);
+  assert.strictEqual(countEventChanges("aaaa9002"), 0);
+});
+
+test("hard-resync deletion counter excludes rows that were already soft-deleted", async () => {
+  const day = "DoubleCountDay";
+  const dayParam = "doublecountday";
+
+  insertEvent({
+    id: "bbbb9001",
+    title: "Active Stale Event",
+    day,
+    location: "Loc A",
+    timeString: "Time A",
+    description: "Desc A",
+    contentHash: "dbl-hash-1",
+    isDeleted: 0,
+  });
+  insertEvent({
+    id: "bbbb9002",
+    title: "Already Deleted Event",
+    day,
+    location: "Loc B",
+    timeString: "Time B",
+    description: "Desc B",
+    contentHash: "dbl-hash-2",
+    isDeleted: 1,
+  });
+
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${dayParam}`,
+    dayListingHtml(day, [
+      { id: "bbbb9001", title: "Active Stale Event", timeStr: "Time A" },
+      { id: "bbbb9002", title: "Already Deleted Event", timeStr: "Time B" },
+    ]),
+  );
+  routes.set(`${BASE_URL}/event/bbbb9001`, detailHtml({ location: "Loc A", description: "Desc A" }));
+  routes.set(`${BASE_URL}/event/bbbb9002`, detailHtml({ location: "Loc B", description: "Desc B" }));
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "hard-resync", days: [dayParam] })),
+  );
+
+  // Both rows are re-parsed and physically wiped+recreated, but only the
   // still-active row counts as a fresh deletion -- the already-deleted row
   // was counted once already when it was originally soft-deleted.
   assert.strictEqual(result.deleted, 1);
   assert.deepStrictEqual(
     result.diffSummary.deletedEvents.map((e) => e.id),
-    ["aaaa9001"],
+    ["bbbb9001"],
   );
-  assert.strictEqual(getEvent("aaaa9001"), undefined);
-  assert.strictEqual(getEvent("aaaa9002"), undefined);
-  assert.strictEqual(countEventChanges("aaaa9001"), 1);
-  assert.strictEqual(countEventChanges("aaaa9002"), 0);
+  assert.strictEqual(countEventChanges("bbbb9001"), 2);
+  assert.strictEqual(countEventChanges("bbbb9002"), 1);
+});
+
+// ---------------------------------------------------------------------------
+// Fix Round 2: per-event write isolation, migrated content hash persistence,
+// and hard-resync wipe guarded by successfully parsed items
+// ---------------------------------------------------------------------------
+
+test("sync mode isolates a per-event write failure so remaining events still get processed", async () => {
+  const day = "WriteErrorDay";
+  const dayParam = "writeerrorday";
+
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${dayParam}`,
+    dayListingHtml(day, [
+      { id: "eeee1001", title: "Failing Event", timeStr: "Time A" },
+      { id: "eeee1002", title: "Healthy Event", timeStr: "Time B" },
+    ]),
+  );
+  routes.set(`${BASE_URL}/event/eeee1001`, detailHtml({ location: "Loc 1", description: "Desc 1" }));
+  routes.set(`${BASE_URL}/event/eeee1002`, detailHtml({ location: "Loc 2", description: "Desc 2" }));
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withFailingWrite(sharedFakeD1, "eeee1001", () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    ),
+  );
+
+  assert.strictEqual(result.errors, 1);
+  assert.ok(result.log.some((line) => line.includes("eeee1001")));
+
+  // The failing event's insert threw and was never committed...
+  assert.strictEqual(getEvent("eeee1001"), undefined);
+  // ...but the event after it in the parsed list was still written.
+  const healthy = getEvent("eeee1002");
+  assert.strictEqual(healthy?.title, "Healthy Event");
+});
+
+test("sync mode persists a migrated content hash even when no visible fields changed", async () => {
+  const day = "HashMigrationDay";
+  const dayParam = "hashmigrationday";
+
+  insertEvent({
+    id: "aaaa9101",
+    title: "Migration Panel",
+    day,
+    location: "Room 9",
+    timeString: "Time Z",
+    description: "Desc Z",
+    track: "",
+    speakers: JSON.stringify([]),
+    // Stands in for a hash computed under a since-changed hashing scheme --
+    // every other field below matches the freshly scraped content exactly.
+    contentHash: "legacy-hash-format",
+  });
+
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${dayParam}`,
+    dayListingHtml(day, [{ id: "aaaa9101", title: "Migration Panel", timeStr: "Time Z" }]),
+  );
+  routes.set(`${BASE_URL}/event/aaaa9101`, detailHtml({ location: "Room 9", description: "Desc Z" }));
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+  );
+
+  // No visible field differs, so this must not be reported as an update...
+  assert.strictEqual(result.updated, 0);
+  assert.deepStrictEqual(result.diffSummary.updatedEvents, []);
+  assert.strictEqual(countEventChanges("aaaa9101"), 0);
+
+  // ...but the freshly computed content hash must still be persisted so this
+  // event stops being flagged as changed on every subsequent sync.
+  const expectedHash = await computeContentHash("Migration Panel", "Room 9", "Time Z", "Desc Z");
+  const updated = getEvent("aaaa9101");
+  assert.strictEqual(updated?.content_hash, expectedHash);
 });

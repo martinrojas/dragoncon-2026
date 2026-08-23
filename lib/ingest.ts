@@ -277,163 +277,171 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     }
 
     // hard-resync: reset the day only now that this run's scrape/parse pass
-    // has finished. When maxDetailFetches truncated `targets`, only the
-    // targeted events are wiped -- events beyond the limit that were never
-    // attempted this run are left untouched.
+    // has finished, and only for events this run actually parsed -- a
+    // failed detail fetch (or an empty listing) must never wipe rows we
+    // have no replacement data for.
     if (isHardResync) {
-      const existingForDay = await db.select().from(events).where(eq(events.day, dayHeader));
-      const toWipe = truncated ? existingForDay.filter((ev) => scrapedIdsForDay.has(ev.id)) : existingForDay;
+      if (parsedItems.length === 0) {
+        log(`Hard-resync: skipping wipe for ${dayHeader} -- no events were successfully parsed this run`);
+      } else {
+        const parsedIds = new Set(parsedItems.map((p) => p.item.id));
+        const existingForDay = await db.select().from(events).where(eq(events.day, dayHeader));
+        const toWipe = existingForDay.filter((ev) => parsedIds.has(ev.id));
 
-      if (toWipe.length > 0) {
-        // Already-deleted rows still need removing to avoid a primary-key
-        // conflict on re-insert, but only still-active rows count as a
-        // fresh deletion here -- an already-deleted row was counted when it
-        // was originally soft-deleted, so counting it again would double-count.
-        const activeWiped = toWipe.filter((ev) => ev.isDeleted === 0);
-        for (const ev of activeWiped) {
-          diffSummary.deletedEvents.push({ id: ev.id, title: ev.title });
-          deletedCount++;
-          await db.insert(eventChanges).values({
-            eventId: ev.id,
-            eventTitle: ev.title,
-            changeType: "deleted",
-            diffDetails: JSON.stringify({ reason: "hard-resync wipe" }),
-            detectedAt: new Date().toISOString(),
-          });
+        if (toWipe.length > 0) {
+          // Already-deleted rows still need removing to avoid a primary-key
+          // conflict on re-insert, but only still-active rows count as a
+          // fresh deletion here -- an already-deleted row was counted when it
+          // was originally soft-deleted, so counting it again would double-count.
+          const activeWiped = toWipe.filter((ev) => ev.isDeleted === 0);
+          for (const ev of activeWiped) {
+            diffSummary.deletedEvents.push({ id: ev.id, title: ev.title });
+            deletedCount++;
+            await db.insert(eventChanges).values({
+              eventId: ev.id,
+              eventTitle: ev.title,
+              changeType: "deleted",
+              diffDetails: JSON.stringify({ reason: "hard-resync wipe" }),
+              detectedAt: new Date().toISOString(),
+            });
+          }
+          for (const ev of toWipe) {
+            await db.delete(events).where(eq(events.id, ev.id));
+          }
+          log(`Hard-resync: wiped ${toWipe.length} existing event(s) for ${dayHeader}`);
         }
-        for (const ev of toWipe) {
-          await db.delete(events).where(eq(events.id, ev.id));
-        }
-        log(
-          `Hard-resync: wiped ${toWipe.length} existing event(s) for ${dayHeader}` +
-            (truncated ? " (maxDetailFetches limited: untargeted events preserved)" : ""),
-        );
       }
     }
 
     for (const parsed of parsedItems) {
-      const { item, location, description, track, speakersJson, startsAt, endsAt, durationMinutes, contentHash } =
-        parsed;
+      try {
+        const { item, location, description, track, speakersJson, startsAt, endsAt, durationMinutes, contentHash } =
+          parsed;
 
-      // hard-resync already wiped this day's targeted rows above, so
-      // `existing` naturally comes back empty and every item takes the
-      // create path.
-      const existing = isHardResync
-        ? undefined
-        : (await db.select().from(events).where(eq(events.id, item.id)))[0];
+        // hard-resync already wiped this day's parsed rows above, so
+        // `existing` naturally comes back empty and every item takes the
+        // create path.
+        const existing = isHardResync
+          ? undefined
+          : (await db.select().from(events).where(eq(events.id, item.id)))[0];
 
-      const now = new Date().toISOString();
+        const now = new Date().toISOString();
 
-      if (!existing) {
-        diffSummary.createdEvents.push({
-          id: item.id,
-          title: item.title,
-          location: location || null,
-          timeString: item.timeStr || null,
-        });
-        createdCount++;
-        log(`[CREATE] ${item.title}`);
-
-        if (!isDryRun) {
-          await db.insert(events).values({
+        if (!existing) {
+          diffSummary.createdEvents.push({
             id: item.id,
             title: item.title,
-            description,
-            location,
-            track,
-            startsAt,
-            endsAt,
-            durationMinutes,
-            day: dayHeader,
-            timeString: item.timeStr,
-            speakers: speakersJson,
-            contentHash,
-            firstSeenAt: now,
-            lastSeenAt: now,
-            isDeleted: 0,
+            location: location || null,
+            timeString: item.timeStr || null,
           });
+          createdCount++;
+          log(`[CREATE] ${item.title}`);
 
-          await db.insert(eventChanges).values({
-            eventId: item.id,
-            eventTitle: item.title,
-            changeType: isHardResync ? "hard-resync" : "created",
-            diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
-            detectedAt: now,
-          });
-        }
-      } else {
-        const trackChanged = existing.track !== track;
-        const speakersChanged = existing.speakers !== speakersJson;
-        const isUncancel = existing.isDeleted === 1;
-
-        if (existing.contentHash !== contentHash || trackChanged || speakersChanged || isUncancel) {
-          const diffs: Record<string, { old: unknown; new: unknown }> = {};
-          if (existing.title !== item.title) diffs.title = { old: existing.title, new: item.title };
-          if (existing.location !== location) diffs.location = { old: existing.location, new: location };
-          if (existing.timeString !== item.timeStr) diffs.timeString = { old: existing.timeString, new: item.timeStr };
-          if (trackChanged) diffs.track = { old: existing.track, new: track };
-          if (existing.startsAt !== startsAt) diffs.startsAt = { old: existing.startsAt, new: startsAt };
-          if (existing.endsAt !== endsAt) diffs.endsAt = { old: existing.endsAt, new: endsAt };
-          if (existing.description !== description) diffs.description = { old: existing.description, new: description };
-          if (speakersChanged) diffs.speakers = { old: existing.speakers, new: speakersJson };
-
-          const hasFieldChanges = Object.keys(diffs).length > 0;
-
-          if (!hasFieldChanges) {
-            // No field actually differs (including a pure re-appearance of a
-            // previously deleted event with unchanged content) -- just
-            // refresh lastSeenAt, don't log an empty update change record.
-            if (!isDryRun) {
-              await db
-                .update(events)
-                .set({ lastSeenAt: now, isDeleted: 0 })
-                .where(eq(events.id, item.id));
-            }
-          } else {
-            const changeType = isUncancel ? "uncancelled" : "updated";
-            diffSummary.updatedEvents.push({
+          if (!isDryRun) {
+            await db.insert(events).values({
               id: item.id,
               title: item.title,
-              changes: Object.keys(diffs).join(", ") || "content",
+              description,
+              location,
+              track,
+              startsAt,
+              endsAt,
+              durationMinutes,
+              day: dayHeader,
+              timeString: item.timeStr,
+              speakers: speakersJson,
+              contentHash,
+              firstSeenAt: now,
+              lastSeenAt: now,
+              isDeleted: 0,
             });
-            updatedCount++;
-            log(`[UPDATE] ${item.title}: ${Object.keys(diffs).join(", ") || "content"}`);
 
-            if (!isDryRun) {
-              await db
-                .update(events)
-                .set({
-                  title: item.title,
-                  description,
-                  location,
-                  track,
-                  startsAt,
-                  endsAt,
-                  durationMinutes,
-                  day: dayHeader,
-                  timeString: item.timeStr,
-                  speakers: speakersJson,
-                  contentHash,
-                  lastSeenAt: now,
-                  isDeleted: 0,
-                })
-                .where(eq(events.id, item.id));
-
-              await db.insert(eventChanges).values({
-                eventId: item.id,
-                eventTitle: item.title,
-                changeType,
-                diffDetails: JSON.stringify(diffs),
-                detectedAt: now,
-              });
-            }
+            await db.insert(eventChanges).values({
+              eventId: item.id,
+              eventTitle: item.title,
+              changeType: isHardResync ? "hard-resync" : "created",
+              diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
+              detectedAt: now,
+            });
           }
-        } else if (!isDryRun) {
-          await db
-            .update(events)
-            .set({ lastSeenAt: now, isDeleted: 0 })
-            .where(eq(events.id, item.id));
+        } else {
+          const trackChanged = existing.track !== track;
+          const speakersChanged = existing.speakers !== speakersJson;
+          const isUncancel = existing.isDeleted === 1;
+
+          if (existing.contentHash !== contentHash || trackChanged || speakersChanged || isUncancel) {
+            const diffs: Record<string, { old: unknown; new: unknown }> = {};
+            if (existing.title !== item.title) diffs.title = { old: existing.title, new: item.title };
+            if (existing.location !== location) diffs.location = { old: existing.location, new: location };
+            if (existing.timeString !== item.timeStr) diffs.timeString = { old: existing.timeString, new: item.timeStr };
+            if (trackChanged) diffs.track = { old: existing.track, new: track };
+            if (existing.startsAt !== startsAt) diffs.startsAt = { old: existing.startsAt, new: startsAt };
+            if (existing.endsAt !== endsAt) diffs.endsAt = { old: existing.endsAt, new: endsAt };
+            if (existing.description !== description) diffs.description = { old: existing.description, new: description };
+            if (speakersChanged) diffs.speakers = { old: existing.speakers, new: speakersJson };
+
+            const hasFieldChanges = Object.keys(diffs).length > 0;
+
+            if (!hasFieldChanges) {
+              // No field actually differs (including a pure re-appearance of a
+              // previously deleted event with unchanged content) -- just
+              // refresh lastSeenAt and persist the freshly computed content
+              // hash (it may have migrated even though visible fields didn't).
+              if (!isDryRun) {
+                await db
+                  .update(events)
+                  .set({ contentHash, lastSeenAt: now, isDeleted: 0 })
+                  .where(eq(events.id, item.id));
+              }
+            } else {
+              const changeType = isUncancel ? "uncancelled" : "updated";
+              diffSummary.updatedEvents.push({
+                id: item.id,
+                title: item.title,
+                changes: Object.keys(diffs).join(", ") || "content",
+              });
+              updatedCount++;
+              log(`[UPDATE] ${item.title}: ${Object.keys(diffs).join(", ") || "content"}`);
+
+              if (!isDryRun) {
+                await db
+                  .update(events)
+                  .set({
+                    title: item.title,
+                    description,
+                    location,
+                    track,
+                    startsAt,
+                    endsAt,
+                    durationMinutes,
+                    day: dayHeader,
+                    timeString: item.timeStr,
+                    speakers: speakersJson,
+                    contentHash,
+                    lastSeenAt: now,
+                    isDeleted: 0,
+                  })
+                  .where(eq(events.id, item.id));
+
+                await db.insert(eventChanges).values({
+                  eventId: item.id,
+                  eventTitle: item.title,
+                  changeType,
+                  diffDetails: JSON.stringify(diffs),
+                  detectedAt: now,
+                });
+              }
+            }
+          } else if (!isDryRun) {
+            await db
+              .update(events)
+              .set({ lastSeenAt: now, isDeleted: 0 })
+              .where(eq(events.id, item.id));
+          }
         }
+      } catch (e: unknown) {
+        log(`Error writing event ${parsed.item.id} (${parsed.item.title}): ${e instanceof Error ? e.message : String(e)}`);
+        errorCount++;
       }
     }
 
