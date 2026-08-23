@@ -58,7 +58,13 @@ export async function getUserFromContext(c: Context): Promise<SessionUser | null
     token = authHeader.slice("Bearer ".length).trim();
   } else if (cookieHeader) {
     const match = cookieHeader.match(/(?:^|;\s*)session=([^;]+)/);
-    token = match ? decodeURIComponent(match[1]) : null;
+    if (match) {
+      try {
+        token = decodeURIComponent(match[1]);
+      } catch {
+        token = null;
+      }
+    }
   }
 
   if (!token) {

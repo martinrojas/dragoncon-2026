@@ -185,6 +185,14 @@ test("getUserFromContext reads the token from the Cookie header", async () => {
   });
 });
 
+test("getUserFromContext returns null for a malformed cookie (invalid URI encoding)", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    const c = createContext({ cookieHeader: "session=abc%" });
+    const user = await getUserFromContext(c);
+    assert.strictEqual(user, null);
+  });
+});
+
 // --- adminGuard ---
 
 test("adminGuard returns 401 when unauthenticated", async () => {
