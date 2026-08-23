@@ -190,7 +190,13 @@ export default function HomePage({
   // Search & Filter Drawer
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedDay, setSelectedDay] = useState("");
+  const [selectedDay, setSelectedDay] = useState<string>(() => {
+    if (days && days.length > 0) {
+      const sat = days.find((d) => d.toLowerCase().includes("sat"));
+      return sat || days[0];
+    }
+    return "Sat";
+  });
   const [selectedTrack, setSelectedTrack] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const [showFilterSheet, setShowFilterSheet] = useState(false);
@@ -296,13 +302,6 @@ export default function HomePage({
     };
   }, []);
 
-  // Set default day if none selected
-  useEffect(() => {
-    if (!selectedDay && formattedDays.length > 0) {
-      const sat = formattedDays.find((d) => d.label === "SAT");
-      setSelectedDay(sat ? sat.value : formattedDays[0].value);
-    }
-  }, [formattedDays, selectedDay]);
 
   // Fetch filtered events
   useEffect(() => {
@@ -742,66 +741,56 @@ export default function HomePage({
   };
 
   // Format Day Items for DayStrip (sorted chronologically by con date)
+  // Format Day Items for DayStrip directly from server-driven days
   const formattedDays: DayItem[] = useMemo(() => {
-    const standardDays = [
-      { label: "THU", date: "03", rank: 3, matchKey: "thu", fallbackValue: "Thu" },
-      { label: "FRI", date: "04", rank: 4, matchKey: "fri", fallbackValue: "Fri" },
-      { label: "SAT", date: "05", rank: 5, matchKey: "sat", fallbackValue: "Sat" },
-      { label: "SUN", date: "06", rank: 6, matchKey: "sun", fallbackValue: "Sun" },
-      { label: "MON", date: "07", rank: 7, matchKey: "mon", fallbackValue: "Mon" },
-    ];
-
-    const combinedDays = new Set<string>();
-    for (const d of days || []) {
-      if (d) combinedDays.add(d);
-    }
-
-    // Ensure all 5 core con days are present
-    for (const std of standardDays) {
-      const hasMatch = Array.from(combinedDays).some((d) => d.toLowerCase().includes(std.matchKey));
-      if (!hasMatch) {
-        combinedDays.add(std.fallbackValue);
-      }
-    }
-
     const parseDayInfo = (dayStr: string) => {
       const lower = dayStr.toLowerCase();
-      const numMatch = dayStr.match(/\d+/);
-      const dateNum = numMatch ? numMatch[0].padStart(2, "0") : null;
 
-      for (const std of standardDays) {
-        if (lower.includes(std.matchKey)) {
-          return {
-            label: std.label,
-            date: dateNum || std.date,
-            rank: std.rank,
-          };
-        }
+      let label = "CON";
+      if (lower.includes("wed")) label = "WED";
+      else if (lower.includes("thu")) label = "THU";
+      else if (lower.includes("fri")) label = "FRI";
+      else if (lower.includes("sat")) label = "SAT";
+      else if (lower.includes("sun")) label = "SUN";
+      else if (lower.includes("mon")) label = "MON";
+      else if (lower.includes("tue")) label = "TUE";
+      else {
+        const parts = dayStr.split(",");
+        label = (parts[0]?.trim().toUpperCase() || "CON").slice(0, 3);
       }
 
-      const parts = dayStr.split(",");
-      const dayName = parts[0]?.trim().toUpperCase() || "CON";
-      return {
-        label: dayName.slice(0, 3),
-        date: dateNum || "01",
-        rank: dateNum ? parseInt(dateNum, 10) : 99,
-      };
+      const numMatch = dayStr.match(/\d+/);
+      let dateNum: string;
+      if (numMatch) {
+        dateNum = numMatch[0].padStart(2, "0");
+      } else {
+        const fallbackDates: Record<string, string> = {
+          WED: "02",
+          THU: "03",
+          FRI: "04",
+          SAT: "05",
+          SUN: "06",
+          MON: "07",
+          TUE: "08",
+        };
+        dateNum = fallbackDates[label] || "01";
+      }
+
+      const rank = parseInt(dateNum, 10) || 99;
+      return { label, date: dateNum, rank };
     };
 
-    const sortedDays = Array.from(combinedDays).sort((a, b) => parseDayInfo(a).rank - parseDayInfo(b).rank);
+    const sortedDays = [...(days || [])].sort((a, b) => parseDayInfo(a).rank - parseDayInfo(b).rank);
 
     return sortedDays.map((dayStr) => {
       const { label, date } = parseDayInfo(dayStr);
-      const count = eventsList.filter((e) => e.day === dayStr || (e.day && e.day.toLowerCase().includes(label.toLowerCase()))).length;
-
       return {
         value: dayStr,
         label,
         date,
-        count: count > 0 ? count : undefined,
       };
     });
-  }, [days, eventsList]);
+  }, [days]);
 
   // Contextual preceding venue helper for walk time calculations
   const getPrecedingVenue = (currentEvent: EventItem): string | null => {
