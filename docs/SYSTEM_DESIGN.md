@@ -3,8 +3,8 @@ type: System Design
 title: System Design — CyberDragon Companion App
 description: Architecture, subsystems, data model, APIs, and Cloudflare deployment for the Dragon Con 2026 Companion PWA.
 tags: [architecture, evergreen, pwa, cloudflare, react19]
-generated: { by: docsmith/1.3.0, at: 2026-08-22T07:25:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-22T07:25:00Z }]
+generated: { by: docsmith/1.3.0, at: 2026-08-23T16:00:00Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-23T16:00:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -23,6 +23,15 @@ sources:
   - id: package-manifest
     resource: package.json:1-40
     title: Real dependency versions and scripts
+  - id: auth-guard-code
+    resource: lib/auth.ts:1-100
+    title: Session parsing, role verification, and adminGuard middleware
+  - id: admin-page-code
+    resource: pages/admin.tsx:1-1057
+    title: Admin control center dashboard, ingestion controls, and run history UI
+  - id: make-admin-code
+    resource: scripts/make-admin.ts:1-169
+    title: Administrator promotion CLI utility
 ---
 
 # System Design — CyberDragon Companion App
@@ -55,6 +64,8 @@ sources:
 - **Authentication & Squads:** Register/login via WebAuthn passkeys or salted SHA-256 passwords (`routes/api/auth.ts`, `routes/api/auth/passkey.ts`).
 - **Calendar Export:** Generate RFC 5545 `.ics` payloads containing user-saved panels (`routes/api/export-ics.ts`).
 - **Live Ingestion:** Scrape and parse external schedule data into D1 SQLite (`lib/ingest.ts`, `routes/api/ingest.ts`).
+- **Admin-Driven Ingestion Control:** Restrict all schedule synchronization to authenticated administrators via a dedicated `/admin` dashboard supporting `sync`, `dry-run` preview, and emergency `hard-resync` modes (`pages/admin.tsx`, `routes/api/admin/ingest.ts`, `lib/auth.ts`).
+- **Role-Based Access Control:** Gate administrative endpoints and pages behind a `users.role` designation of `"admin"`, assigned through the `pnpm run make-admin <username>` CLI (`lib/auth.ts`, `scripts/make-admin.ts`).
 
 ### 2.2 Non-Functional Requirements
 - **Performance:** Sub-10ms Worker cold-start time and instantaneous client-side tab switching.
@@ -104,6 +115,10 @@ flowchart TD
 | **UI Components** | `components/CyberDragonUi.tsx` | Glass design system UI components | `TabBar`, `Toast`, `DataCard`, `ProgressMeter`, `Badge`, `Tag`, `Button` |
 | **Detail Modal** | `components/PanelDetailModal.tsx` | Panel detail view with transit routing and line status | `PanelDetailModal` |
 | **API Endpoints** | `routes/api/*.ts` | Edge HTTP handlers for schedule, auth, friends, and export | `export const GET = defineHandler(...)` |
+| **Auth Guard** | `lib/auth.ts` | Session token parsing, database role refresh, and admin authorization | `parseToken()`, `verifyUserRole()`, `getUserFromContext()`, `adminGuard()` |
+| **Admin Dashboard** | `pages/admin.tsx`, `pages/admin.server.ts` | Ingestion control center with live logs, diff inspector, and run history | `AdminPage()`, `loader = defineHandler(...)` |
+| **Admin Endpoints** | `routes/api/admin/*.ts` | Admin-only ingestion execution, DB stats, and audit run queries | `export const POST = defineHandler(...)` |
+| **Admin CLI** | `scripts/make-admin.ts` | Promotes a registered user account to administrator | `makeAdmin()` |
 
 ---
 
@@ -114,6 +129,7 @@ erDiagram
     USERS ||--o{ USER_EVENTS : saves
     USERS ||--o{ FRIENDSHIPS : initiates
     USERS ||--o{ AUTHENTICATORS : owns
+    USERS ||--o{ INGESTION_RUNS : executes
     EVENTS ||--o{ USER_EVENTS : contains
     EVENTS ||--o{ EVENT_CHANGES : tracks
 
@@ -141,6 +157,7 @@ erDiagram
         text name
         text password_hash
         text avatar_url
+        text role
         text created_at
     }
 
@@ -178,6 +195,19 @@ erDiagram
         integer counter
         text created_at
     }
+
+    INGESTION_RUNS {
+        integer id PK
+        text user_id FK
+        text mode
+        text status
+        text days
+        text stats
+        text log
+        text error_message
+        text started_at
+        text completed_at
+    }
 ```
 
 ---
@@ -195,7 +225,11 @@ erDiagram
 | `POST` | `/api/auth` | Password login & registration | `{ action: "register"\|"login", username, password, name }` | `{ success, user, token }` |
 | `POST` | `/api/auth/passkey` | WebAuthn passkey ceremonies | `?action=generate-register-options\|verify-register\|...` | `{ success, options\|user\|token }` |
 | `GET` | `/api/export-ics` | Export schedule as `.ics` | `?userId=` | `text/calendar` attachment |
-| `POST` | `/api/ingest` | Trigger schedule ingestion | `{ days, maxDetailFetches }` | `{ success, result }` |
+| `POST` | `/api/ingest` | Trigger schedule ingestion (admin only) | `{ days, maxDetailFetches }` | `{ success, result }` |
+| `POST` | `/api/admin/ingest` | Execute admin ingestion run (admin only) | `{ mode, days, maxDetailFetches }` | `{ success, runId, result }` |
+| `GET` | `/api/admin/stats` | Database health metrics (admin only) | — | `{ success, stats }` |
+| `GET` | `/api/admin/runs` | Recent ingestion run history (admin only) | — | `{ success, runs }` |
+| `GET` | `/api/admin/runs/:id` | Single ingestion run with full logs (admin only) | — | `{ success, run }` |
 
 For full interface specifications: `docs/interfaces/api-contracts.md`.
 
@@ -204,6 +238,7 @@ For full interface specifications: `docs/interfaces/api-contracts.md`.
 ## 7. Security Design
 
 - **Authentication:** WebAuthn biometric passkeys via `@simplewebauthn/server` and `@simplewebauthn/browser` (FIDO2 / WebAuthn standard). Passwords use salted SHA-256 digests (`dragoncon_salt_<password>`).
+- **Authorization (RBAC):** `adminGuard` resolves the session token from the `Authorization: Bearer` header or `session` cookie, re-reads the account's `role` from D1 (the database row is authoritative over any client-supplied claim), and rejects non-admins with `403 Forbidden` and unauthenticated requests with `401 Unauthorized` [^auth-guard-code].
 - **Transport Security:** All traffic is encrypted in transit via Cloudflare Edge TLS 1.3 with HTTPS enforcement.
 - **Credentials & Secrets:** Production deployments use GitHub Actions secrets (`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). No secret credentials are committed to source control.
 - **Input Sanitization:** Ingestion parses HTML via Cheerio with strict attribute whitelisting; SQL queries use Drizzle parameterized queries on D1.
@@ -232,14 +267,16 @@ For step-by-step deployment and provisioning: `docs/guides/deployment-runbook.md
 ## 9. Testing Strategy
 
 - **Test Framework:** Node.js native test runner (`node --experimental-strip-types --test`).
-- **Suite Command:** `pnpm test` (executes `tests/walktime.test.ts`).
+- **Suite Command:** `pnpm test` (executes `tests/*.test.ts`).
 - **Coverage:**
-  - Transit calculations between adjacent and distant host hotels.
-  - Zero walk time for identical venues.
-  - Fallback transit calculation for unmapped locations.
-  - Venue normalization across aliases (e.g. `Courtland Grand` $\to$ `SHERATON`).
+  - Transit calculations between adjacent and distant host hotels, identical-venue zero transit, unmapped-location fallbacks, and venue alias normalization.
   - Line capacity heuristics bounds ($45\% - 94\%$) and status label mapping.
-- **Live Test Result:** 8 tests executed, 8 passed, 0 failed.
+  - Schema definitions for `users.role` and the `ingestion_runs` table.
+  - Administrator promotion CLI validation, not-found handling, and successful role escalation.
+  - Session token parsing, role verification, malformed cookie resilience, and `adminGuard` 401/403 enforcement.
+  - Ingestion engine content hashing, `dry-run` zero-write guarantees, `sync` diffing, and `hard-resync` wipe safety.
+  - Admin API authorization on all five protected endpoints, stats aggregation, and run history queries.
+- **Live Test Result:** 66 tests executed, 66 passed, 0 failed.
 
 ---
 

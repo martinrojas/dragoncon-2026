@@ -1,8 +1,14 @@
 import type { Context } from "hono";
 import { defineHandler } from "void";
-import { runIngestion } from "../../lib/ingest";
+import { adminGuard } from "../../lib/auth.ts";
+import { runIngestion } from "../../lib/ingest.ts";
 
 export const POST = defineHandler(async (c: Context) => {
+  const guard = await adminGuard(c);
+  if ("errorResponse" in guard) {
+    return guard.errorResponse;
+  }
+
   try {
     const body = (await c.req.json().catch(() => ({}))) as {
       days?: string[];

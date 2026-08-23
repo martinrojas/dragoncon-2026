@@ -3,6 +3,37 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-23 — Knowledge Bundle Maintained
+
+- **Type:** `maintain` pass by `docsmith/1.3.0`.
+- **Audited & Maintained:**
+  - `docs/SYSTEM_DESIGN.md`: Updated Section 2 (admin-driven ingestion control, RBAC requirements), Section 4 (`lib/auth.ts`, `pages/admin.tsx`, `routes/api/admin/*.ts`, `scripts/make-admin.ts` modules), Section 5 (`users.role` attribute and `INGESTION_RUNS` entity in ER diagram), Section 6 (four `/api/admin/*` endpoints), Section 7 (RBAC authorization model), and Section 9 (66-test suite coverage). Re-verified against live code.
+  - `docs/interfaces/api-contracts.md`: Added admin ingestion, stats, and run history endpoint contracts.
+  - `docs/guides/deployment-runbook.md`: Added Section 7 administrator role provisioning procedures.
+  - `docs/index.md`: Registered the admin ingestion dashboard spec and implementation plan as implemented sources.
+- **Live Verifications:**
+  - Unit tests: `pnpm test` executed and verified (66/66 tests pass across 7 test suites).
+  - Production build: `pnpm build` verified (SSR Worker and static PWA client bundles compile clean).
+  - Browser verification: `/admin` access control, live `dry-run` ingestion execution, and DayStrip rendering verified in headless browser against the local dev server.
+
+---
+## 2026-08-23 — Admin Ingestion Dashboard Subsystem
+
+- **Type:** Feature / Admin Control Subsystem.
+- **Changes:**
+  - `db/schema.ts` & migrations: Added `role` (`"admin" | "user"`) to `users` and created `ingestion_runs` table for auditing sync runs.
+  - `scripts/make-admin.ts`: CLI utility (`pnpm run make-admin <username>`) for promoting users to admin with local D1 SQLite resolution.
+  - `lib/auth.ts`: Implemented `adminGuard` for route authorization and updated auth responses to include user roles.
+  - `lib/ingest.ts`: Enhanced ingestion engine with `sync`, `dry-run` (memory diff), and `hard-resync` (emergency overwrite) modes.
+  - `routes/api/admin/`: Created `/api/admin/ingest`, `/api/admin/stats`, `/api/admin/runs`, and `/api/admin/runs/:id` endpoints; guarded legacy `/api/ingest`.
+  - `pages/admin.tsx` & `pages/admin.server.ts`: Built interactive admin control center with live logs, diff summaries, and run history.
+  - `pages/index.tsx`: Added Admin navigation affordance for authenticated administrators.
+- **Live Verifications:**
+  - Unit tests: `pnpm test` executed and verified (66/66 tests pass across 7 test suites).
+  - Production build: `pnpm build` verified (SSR Worker and static PWA client bundles compile clean).
+  - Browser verification: Tested `/admin` access control and live `dry-run` ingestion execution in headless browser against local server.
+
+---
 ## 2026-08-22 — Knowledge Bundle Maintained
 
 - **Type:** `maintain` pass by `docsmith/1.3.0`.
@@ -73,4 +104,4 @@ Entries are listed in reverse chronological order (newest first).
   - Production build: `pnpm build` verified (SSR Worker and static PWA assets bundle clean).
   - Cloudflare deployment: Verified live on `https://dragoncon-2026.martin-d28.workers.dev` with live D1 database `dragoncon-2026-db`.
 
-Docs-freshness: head=2a0635de1a8932487629464d7443233e16157e0f date=2026-08-22 pass=maintain
+Docs-freshness: head=d427349910e602fadbd8221966fa4328b7887d88 date=2026-08-23 pass=maintain

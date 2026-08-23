@@ -136,13 +136,13 @@ export const POST = defineHandler(async (c: Context) => {
 
         const [user] = await db.select().from(users).where(eq(users.id, userId));
         const token = user
-          ? btoa(JSON.stringify({ id: user.id, username: user.username, name: user.name }))
+          ? btoa(JSON.stringify({ id: user.id, username: user.username, name: user.name, role: "user" }))
           : "";
 
         return c.json({
           success: true,
           message: "Passkey registered successfully!",
-          user: user ? { id: user.id, username: user.username, name: user.name } : null,
+          user: user ? { id: user.id, username: user.username, name: user.name, role: "user" } : null,
           token,
         });
       }
@@ -205,11 +205,13 @@ export const POST = defineHandler(async (c: Context) => {
           .set({ counter: verification.authenticationInfo.newCounter })
           .where(eq(authenticators.id, authRecord.id));
 
-        const token = btoa(JSON.stringify({ id: user.id, username: user.username, name: user.name }));
+        const token = btoa(
+          JSON.stringify({ id: user.id, username: user.username, name: user.name, role: user.role }),
+        );
 
         return c.json({
           success: true,
-          user: { id: user.id, username: user.username, name: user.name },
+          user: { id: user.id, username: user.username, name: user.name, role: user.role },
           token,
         });
       }

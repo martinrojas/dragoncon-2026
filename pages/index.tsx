@@ -24,6 +24,7 @@ export interface User {
   id: string;
   username: string;
   name: string;
+  role?: string;
 }
 
 export interface EventItem {
@@ -189,7 +190,13 @@ export default function HomePage({
   // Search & Filter Drawer
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedDay, setSelectedDay] = useState("");
+  const [selectedDay, setSelectedDay] = useState<string>(() => {
+    if (days && days.length > 0) {
+      const sat = days.find((d) => d.toLowerCase().includes("sat"));
+      return sat || days[0];
+    }
+    return "Sat";
+  });
   const [selectedTrack, setSelectedTrack] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const [showFilterSheet, setShowFilterSheet] = useState(false);
@@ -295,13 +302,6 @@ export default function HomePage({
     };
   }, []);
 
-  // Set default day if none selected
-  useEffect(() => {
-    if (!selectedDay && days && days.length > 0) {
-      const sat = days.find((d) => d.toLowerCase().includes("sat"));
-      setSelectedDay(sat || days[0]);
-    }
-  }, [days, selectedDay]);
 
   // Fetch filtered events
   useEffect(() => {
@@ -741,38 +741,64 @@ export default function HomePage({
   };
 
   // Format Day Items for DayStrip (sorted chronologically by con date)
+  // Format Day Items for DayStrip directly from server-driven days
   const formattedDays: DayItem[] = useMemo(() => {
-    const parseDateNum = (dayStr: string) => {
-      const match = dayStr.match(/\d+/);
-      return match ? parseInt(match[0], 10) : 99;
-    };
+    const parseDayInfo = (dayStr: string) => {
+      const lower = dayStr.toLowerCase();
 
-    const sortedDays = [...days].sort((a, b) => parseDateNum(a) - parseDateNum(b));
-
-    return sortedDays.map((dayStr) => {
-      const parts = dayStr.split(",");
-      const dayName = parts[0]?.trim().toUpperCase() || "CON";
-      const label = dayName.slice(0, 3);
-
-      let dateNum = "01";
-      if (parts[1]) {
-        const numMatch = parts[1].match(/\d+/);
-        if (numMatch) {
-          dateNum = numMatch[0].padStart(2, "0");
-        }
+      let label = "CON";
+      if (lower.includes("wed")) label = "WED";
+      else if (lower.includes("thu")) label = "THU";
+      else if (lower.includes("fri")) label = "FRI";
+      else if (lower.includes("sat")) label = "SAT";
+      else if (lower.includes("sun")) label = "SUN";
+      else if (lower.includes("mon")) label = "MON";
+      else if (lower.includes("tue")) label = "TUE";
+      else {
+        const parts = dayStr.split(",");
+        label = (parts[0]?.trim().toUpperCase() || "CON").slice(0, 3);
       }
 
-      // Count events matching this day
-      const count = eventsList.filter((e) => e.day === dayStr).length;
+      const numMatch = dayStr.match(/\d+/);
+      let dateNum: string;
+      if (numMatch) {
+        dateNum = numMatch[0].padStart(2, "0");
+      } else {
+        const fallbackDates: Record<string, string> = {
+          WED: "02",
+          THU: "03",
+          FRI: "04",
+          SAT: "05",
+          SUN: "06",
+          MON: "07",
+          TUE: "08",
+        };
+        dateNum = fallbackDates[label] || "01";
+      }
 
-      return {
-        value: dayStr,
-        label,
-        date: dateNum,
-        count: count > 0 ? count : undefined,
-      };
-    });
-  }, [days, eventsList]);
+      const rank = parseInt(dateNum, 10) || 99;
+      return { label, date: dateNum, rank };
+    };
+
+    const sortedDays = [...(days || [])].sort((a, b) => parseDayInfo(a).rank - parseDayInfo(b).rank);
+    const seen = new Set<string>();
+    const items: DayItem[] = [];
+
+    for (const dayStr of sortedDays) {
+      const { label, date } = parseDayInfo(dayStr);
+      const key = `${label}-${date}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        items.push({
+          value: dayStr,
+          label,
+          date,
+        });
+      }
+    }
+
+    return items;
+  }, [days]);
 
   // Contextual preceding venue helper for walk time calculations
   const getPrecedingVenue = (currentEvent: EventItem): string | null => {
@@ -936,6 +962,17 @@ export default function HomePage({
               title="Schedule"
               navTabs={desktopNavTabs}
               right={[
+                ...(currentUser?.role === "admin"
+                  ? [
+                      {
+                        icon: "shield-user",
+                        label: "Admin",
+                        onClick: () => {
+                          window.location.href = "/admin";
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   icon: "search",
                   label: "Search",
@@ -956,7 +993,6 @@ export default function HomePage({
                 },
               ]}
             />
-
             {/* DayStrip */}
             <DayStrip days={formattedDays} value={selectedDay} onChange={setSelectedDay} />
 
@@ -1693,6 +1729,15 @@ export default function HomePage({
                       </div>
                     </div>
 
+                    {currentUser.role === "admin" && (
+                      <a
+                        href="/admin"
+                        className="cd-btn cd-btn-signal"
+                        style={{ textDecoration: "none", fontSize: 11, padding: "4px 8px", marginRight: 6 }}
+                      >
+                        [Admin]
+                      </a>
+                    )}
                     <span
                       className="cd-badge"
                       style={{ background: "var(--accent-quiet)", color: "var(--purple-300)", border: "1px solid var(--line-purple)" }}
