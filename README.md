@@ -1,4 +1,4 @@
-# CyberDragon Companion App — Dragon Con 2026 (v1.0.0)
+# CyberDragon Companion App — Dragon Con 2026 (v1.1.0)
 
 CyberDragon is a high-performance, offline-capable mobile companion Progressive Web App (PWA) designed for Dragon Con 2026 in Atlanta, GA. Built with React 19 SSR, Hono, Void, and Cloudflare Workers with D1 SQLite.
 

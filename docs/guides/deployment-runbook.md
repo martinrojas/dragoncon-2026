@@ -3,8 +3,8 @@ type: Guide
 title: Cloudflare Deployment & D1 Operations Runbook
 description: Step-by-step runbook for provisioning, migrating, and deploying the CyberDragon app on Cloudflare Workers and D1.
 tags: [guide, runbook, cloudflare, deployment, d1, ci]
-generated: { by: docsmith/1.3.0, at: 2026-08-23T15:40:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-22T07:25:00Z }]
+generated: { by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -12,13 +12,13 @@ sources:
     resource: wrangler.jsonc:1-41
     title: Cloudflare Workers, custom domain, and D1 database binding configuration
   - id: ci-workflow
-    resource: .github/workflows/ci.yml:1-33
+    resource: .github/workflows/ci.yml:1-44
     title: Pull request and push test/build CI workflow
   - id: deploy-workflow
-    resource: .github/workflows/deploy.yml:1-45
+    resource: .github/workflows/deploy.yml:1-48
     title: Cloudflare deployment CI/CD workflow
   - id: package-scripts
-    resource: package.json:10-15
+    resource: package.json:8-16
     title: Deployment and database migration npm scripts
   - id: make-admin-script
     resource: scripts/make-admin.ts:1-169

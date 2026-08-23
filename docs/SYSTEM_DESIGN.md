@@ -3,8 +3,8 @@ type: System Design
 title: System Design — CyberDragon Companion App
 description: Architecture, subsystems, data model, APIs, and Cloudflare deployment for the Dragon Con 2026 Companion PWA.
 tags: [architecture, evergreen, pwa, cloudflare, react19]
-generated: { by: docsmith/1.3.0, at: 2026-08-23T16:00:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-23T16:00:00Z }]
+generated: { by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -12,26 +12,35 @@ sources:
     resource: lib/walktime.ts:1-111
     title: Core venues, walk matrix, and capacity heuristic implementation
   - id: schema-code
-    resource: db/schema.ts:1-64
+    resource: db/schema.ts:1-92
     title: Drizzle D1 SQLite database tables and indexes
   - id: routes-code
-    resource: routes/api/events.ts:1-87
+    resource: routes/api/events.ts:1-92
     title: Hono API routing and defineHandler export convention
   - id: wrangler-config
     resource: wrangler.jsonc:1-41
     title: Cloudflare Workers, custom domain, and D1 database binding configuration
   - id: package-manifest
-    resource: package.json:1-40
+    resource: package.json:1-39
     title: Real dependency versions and scripts
   - id: auth-guard-code
     resource: lib/auth.ts:1-100
     title: Session parsing, role verification, and adminGuard middleware
   - id: admin-page-code
-    resource: pages/admin.tsx:1-1057
+    resource: pages/admin.tsx:1-1203
     title: Admin control center dashboard, ingestion controls, and run history UI
   - id: make-admin-code
     resource: scripts/make-admin.ts:1-169
     title: Administrator promotion CLI utility
+  - id: feedback-code
+    resource: routes/api/feedback.ts:1-69
+    title: Attendee feedback submission and admin retrieval endpoint
+  - id: error-reporting-code
+    resource: lib/errorReporting.ts:1-190
+    title: Sanitized error reporting and automated bug dispatch
+  - id: error-boundary-code
+    resource: components/ErrorBoundary.tsx:1-289
+    title: React error boundary and recovery interface
 ---
 
 # System Design — CyberDragon Companion App
@@ -120,7 +129,8 @@ flowchart TD
 | **Admin Dashboard** | `pages/admin.tsx`, `pages/admin.server.ts` | Ingestion control center with live logs, diff inspector, and run history | `AdminPage()`, `loader = defineHandler(...)` |
 | **Admin Endpoints** | `routes/api/admin/*.ts` | Admin-only ingestion execution, DB stats, and audit run queries | `export const POST = defineHandler(...)` |
 | **Admin CLI** | `scripts/make-admin.ts` | Promotes a registered user account to administrator | `makeAdmin()` |
-
+| **Feedback & Error Reporting** | `lib/errorReporting.ts`, `routes/api/feedback.ts` | Automated crash capture, sensitive credential redaction, deduplication, and feedback collection | `reportError()`, `setupGlobalErrorCatchers()`, `formatErrorMessage()` |
+| **Error Boundary & Recovery** | `components/ErrorBoundary.tsx` | React class Error Boundary with CyberDragon glass fallback UI & reset/reload actions | `ErrorBoundary` |
 ---
 
 ## 5. Database / Data Model
@@ -131,6 +141,7 @@ erDiagram
     USERS ||--o{ FRIENDSHIPS : initiates
     USERS ||--o{ AUTHENTICATORS : owns
     USERS ||--o{ INGESTION_RUNS : executes
+    USERS ||--o{ FEEDBACK : submits
     EVENTS ||--o{ USER_EVENTS : contains
     EVENTS ||--o{ EVENT_CHANGES : tracks
 
@@ -209,6 +220,20 @@ erDiagram
         text started_at
         text completed_at
     }
+
+    FEEDBACK {
+        text id PK
+        text user_id FK
+        text username
+        text kind
+        text message
+        text contact
+        text app_version
+        text user_agent
+        text page_url
+        text status
+        text created_at
+    }
 ```
 
 ---
@@ -231,7 +256,8 @@ erDiagram
 | `GET` | `/api/admin/stats` | Database health metrics (admin only) | — | `{ success, stats }` |
 | `GET` | `/api/admin/runs` | Recent ingestion run history (admin only) | — | `{ success, runs }` |
 | `GET` | `/api/admin/runs/:id` | Single ingestion run with full logs (admin only) | — | `{ success, run }` |
-
+| `POST` | `/api/feedback` | Submit bug report or suggestion (public & automated error dispatch) | `{ kind, message, contact, userId, username, appVersion, pageUrl }` | `{ success, message }` |
+| `GET` | `/api/feedback` | List attendee feedback & error reports (admin only) | — | `{ success, feedback }` |
 For full interface specifications: `docs/interfaces/api-contracts.md`.
 
 ---
@@ -277,16 +303,18 @@ For step-by-step deployment and provisioning: `docs/guides/deployment-runbook.md
   - Session token parsing, role verification, malformed cookie resilience, and `adminGuard` 401/403 enforcement.
   - Ingestion engine content hashing, `dry-run` zero-write guarantees, `sync` diffing, and `hard-resync` wipe safety.
   - Admin API authorization on all five protected endpoints, stats aggregation, and run history queries.
-- **Live Test Result:** 66 tests executed, 66 passed, 0 failed.
+  - Attendee feedback submission validation, contact normalization, and admin-only feedback retrieval.
+  - Error sanitization, Bearer/JWT/password token redaction, error signature deduplication, session rate limiting, and ErrorBoundary state transitions.
+- **Live Test Result:** 91 tests executed, 91 passed, 0 failed across 11 test suites.
 
 ---
 
 ## 10. Maintenance and Monitoring
 
 - **Observability:** Real-time log streaming via `pnpm exec wrangler tail`.
+- **Automated Crash Reporting:** Client-side runtime exceptions captured by `ErrorBoundary` and global window listeners are sanitized, rate-limited, and automatically persisted to `feedback` with `contact: "Automated Error Report"`.
 - **Metrics:** Cloudflare dashboard monitors request volume, CPU execution time, and D1 read/write units.
 - **Schema Migrations:** Managed in `db/migrations/` and applied automatically during deployment or locally via `pnpm run db:migrate`.
-
 ---
 
 ## 11. Backup and Recovery

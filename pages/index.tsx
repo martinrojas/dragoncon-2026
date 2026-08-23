@@ -18,6 +18,11 @@ import {
 } from "../components/CyberDragonUi";
 import { PanelDetailModal } from "../components/PanelDetailModal";
 import { calculateWalkTime } from "../lib/walktime";
+import { AppStoragePanel, type InstallPromptEvent } from "../components/AppStoragePanel";
+import { FeedbackPanel } from "../components/FeedbackPanel";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { setupGlobalErrorCatchers } from "../lib/errorReporting";
+import { APP_VERSION } from "../lib/version";
 import type { Props } from "./index.server";
 
 export interface User {
@@ -172,6 +177,7 @@ export default function HomePage({
   const [scheduleViewFilter, setScheduleViewFilter] = useState<"All" | "Saved">("All");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [, setUserToken] = useState<string>("");
+  const [changesList, setChangesList] = useState<EventChange[]>(recentChanges || []);
 
   // WebAuthn Passkey Support
   const [supportsPasskeys, setSupportsPasskeys] = useState(false);
@@ -232,6 +238,8 @@ export default function HomePage({
 
   // Ingestion Sync & Cache
   const [isSyncing, setIsSyncing] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState("");
   const [lastSyncTime, setLastSyncTime] = useState<number>(Date.now());
   const [isOnline, setIsOnline] = useState(true);
@@ -259,6 +267,22 @@ export default function HomePage({
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(console.error);
     }
+
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      ("standalone" in navigator && (navigator as unknown as { standalone?: boolean }).standalone === true);
+    setIsInstalled(isStandalone);
+
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as InstallPromptEvent);
+    };
+    const onAppInstalled = () => {
+      setIsInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onAppInstalled);
 
     // Cloudflare Web Analytics (SPA mode)
     const cfBeaconToken = import.meta.env.VITE_CF_BEACON_TOKEN;
@@ -296,9 +320,24 @@ export default function HomePage({
     const savedTimeFormat = localStorage.getItem("dc_time_format");
     if (savedTimeFormat === "12h" || savedTimeFormat === "24h") setTimeFormat(savedTimeFormat);
 
+    const cleanupErrorCatchers = setupGlobalErrorCatchers(() => {
+      const userStr = localStorage.getItem("dc_user");
+      if (userStr) {
+        try {
+          return JSON.parse(userStr);
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    }, APP_VERSION);
+
     return () => {
+      cleanupErrorCatchers();
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onAppInstalled);
     };
   }, []);
 
@@ -652,35 +691,58 @@ export default function HomePage({
     }
   };
 
-  // Trigger Data Ingestion Sync
-  const handleRunSync = async () => {
+  // Check for App & Schedule Updates (non-destructive attendee fetch)
+  const handleCheckForUpdates = async () => {
     setIsSyncing(true);
-    setSyncStatusMsg("Fetching latest Dragon Con 2026 data...");
+    setSyncStatusMsg("Checking for updates...");
     try {
-      const res = await fetch("/api/ingest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: ["Sep++3"], maxDetailFetches: 10 }),
-      });
-      const data = (await res.json()) as {
-        success: boolean;
-        result: { totalScraped: number; created: number; updated: number };
-        error?: string;
-      };
-      if (data.success) {
-        setLastSyncTime(Date.now());
-        setSyncStatusMsg(
-          `Sync Complete! Scraped ${data.result.totalScraped} events (${data.result.created} new, ${data.result.updated} updated).`,
-        );
-        const evRes = await fetch("/api/events");
-        const evData = (await evRes.json()) as { success: boolean; events: EventItem[] };
-        if (evData.success) setEventsList(evData.events);
-        triggerToast("Schedule data synchronized! 🔄", "ok");
-      } else {
-        setSyncStatusMsg(`Sync error: ${data.error}`);
+      // Check Service Worker PWA update if available
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) {
+            await reg.update();
+            if (reg.waiting || reg.installing) {
+              triggerToast("App update ready — reloading...", "ok");
+              window.setTimeout(() => window.location.reload(), 900);
+              return;
+            }
+          }
+        } catch {
+          // SW check error or unregistered
+        }
       }
-    } catch (e: unknown) {
-      setSyncStatusMsg("Failed to run sync");
+
+      // Refetch latest published events & changes from D1
+      const [evRes, chRes] = await Promise.all([
+        fetch("/api/events"),
+        fetch("/api/changes"),
+      ]);
+
+      const evData = (await evRes.json().catch(() => ({}))) as {
+        success?: boolean;
+        events?: EventItem[];
+      };
+      if (evData.success && evData.events) {
+        setEventsList(evData.events);
+      }
+
+      const chData = (await chRes.json().catch(() => ({}))) as {
+        success?: boolean;
+        changes?: EventChange[];
+      };
+      if (chData.success && chData.changes) {
+        setChangesList(chData.changes);
+      }
+
+      setLastSyncTime(Date.now());
+      setSyncStatusMsg("Schedule is up to date!");
+      setTimeout(() => setSyncStatusMsg(""), 3000);
+      triggerToast("Schedule is up to date", "ok");
+    } catch {
+      setSyncStatusMsg("Failed to check for updates");
+      setTimeout(() => setSyncStatusMsg(""), 3000);
+      triggerToast("Couldn't check for updates — offline?", "warn");
     } finally {
       setIsSyncing(false);
     }
@@ -894,15 +956,18 @@ export default function HomePage({
     { id: "schedule", label: "Schedule", icon: "calendar-clock", active: activeTab === "schedule", onClick: () => setActiveTab("schedule") },
     { id: "agenda", label: "Mine", icon: "bookmark", active: activeTab === "agenda", badge: agendaItems.length, onClick: () => setActiveTab("agenda") },
     { id: "friends", label: "Squad", icon: "users", active: activeTab === "friends", onClick: () => setActiveTab("friends") },
-    { id: "changes", label: "Changes", icon: "bell", active: activeTab === "changes", badge: recentChanges?.length, onClick: () => setActiveTab("changes") },
+    { id: "changes", label: "Changes", icon: "bell", active: activeTab === "changes", badge: changesList.length, onClick: () => setActiveTab("changes") },
     { id: "profile", label: "Profile", icon: "user", active: activeTab === "profile", onClick: () => setActiveTab("profile") },
   ];
 
   return (
-    <>
+    <ErrorBoundary
+      contextName="MainApp"
+      user={currentUser ? { id: currentUser.id, username: currentUser.username } : null}
+      appVersion={APP_VERSION}
+    >
       <div
         style={{
-          minHeight: "100vh",
           minHeight: "100dvh",
           backgroundColor: "var(--canvas)",
           backgroundImage: "var(--grid-8)",
@@ -987,9 +1052,9 @@ export default function HomePage({
                 },
                 {
                   icon: "refresh-cw",
-                  label: "Sync",
+                  label: "Updates",
                   active: isSyncing,
-                  onClick: handleRunSync,
+                  onClick: handleCheckForUpdates,
                 },
               ]}
             />
@@ -1471,12 +1536,12 @@ export default function HomePage({
                 LIVE DIFF FEED & PROGRAMMING CHANGES
               </span>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {recentChanges.length === 0 ? (
+                {changesList.length === 0 ? (
                   <div className="cd-glass-panel" style={{ color: "var(--text-tertiary)", textAlign: "center", padding: 30 }}>
-                    No schedule changes recorded yet. Click <strong>Sync</strong> to fetch the latest updates!
+                    No schedule changes recorded yet. Click <strong>Updates</strong> to fetch the latest updates!
                   </div>
                 ) : (
-                  recentChanges.map((change: EventChange) => (
+                  changesList.map((change: EventChange) => (
                     <div key={change.id} className="cd-glass-panel">
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <span style={{ font: "var(--type-subhead)", color: "var(--text-primary)" }}>
@@ -1768,6 +1833,25 @@ export default function HomePage({
                     </div>
                   )}
 
+                  {/* App & Offline Storage */}
+                  <AppStoragePanel
+                    isOnline={isOnline}
+                    lastSyncedMinutesAgo={minutesSinceSync}
+                    savedPanelCount={totalEvents || eventsList.length}
+                    isSyncing={isSyncing}
+                    installPrompt={installPrompt}
+                    isInstalled={isInstalled}
+                    onInstallPromptUsed={() => setInstallPrompt(null)}
+                    onSyncNow={handleCheckForUpdates}
+                    onNotify={triggerToast}
+                  />
+
+                  {/* Feedback Submission */}
+                  <FeedbackPanel
+                    user={{ id: currentUser.id, username: currentUser.username }}
+                    onNotify={triggerToast}
+                  />
+
                   {/* Con Alerts & Notifications */}
                   <div className="cd-glass-panel" style={{ padding: "12px 16px" }}>
                     <div className="cd-label" style={{ marginBottom: 8, color: "var(--gold-500)" }}>
@@ -1868,31 +1952,6 @@ export default function HomePage({
                     </div>
                   </div>
 
-                  {/* Offline Cache Status */}
-                  <div className="cd-glass-panel" style={{ padding: "12px 16px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <span className="cd-label">OFFLINE CACHE</span>
-                      <span className="cd-data" style={{ color: isOnline ? "var(--jade-500)" : "var(--coral-500)", fontSize: 11 }}>
-                        {isOnline ? "● LIVE (ONLINE)" : "○ OFFLINE CACHE"}
-                      </span>
-                    </div>
-                    <div className="cd-data" style={{ color: "var(--text-tertiary)", fontSize: 11, marginBottom: 12 }}>
-                      Synced {minutesSinceSync === 0 ? "just now" : `${minutesSinceSync} min ago`} • {totalEvents || eventsList.length} panels in database
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={handleRunSync} disabled={isSyncing} className="cd-btn cd-btn-ghost" style={{ fontSize: 12 }}>
-                        {isSyncing ? "SYNCING..." : "🔄 SYNC NOW"}
-                      </button>
-                      <button
-                        onClick={() => alert(`Your Con Badge ID is: BADGE DC-40-${currentUser.id.toUpperCase().slice(0, 8)}`)}
-                        className="cd-btn cd-btn-ghost"
-                        style={{ fontSize: 12 }}
-                      >
-                        📱 SHOW BADGE
-                      </button>
-                    </div>
-                  </div>
-
                   {/* Sign Out Action */}
                   <button
                     onClick={handleLogout}
@@ -1903,7 +1962,7 @@ export default function HomePage({
                   </button>
 
                   <div className="cd-label" style={{ textAlign: "center", marginTop: 12 }}>
-                    CYBERDRAGON 1.4.0 · DRAGON CON 2026 COMPANION
+                    {`CYBERDRAGON ${APP_VERSION} · DRAGON CON 2026 COMPANION`}
                   </div>
                 </div>
               )}
@@ -2200,6 +2259,6 @@ export default function HomePage({
           </button>
         </nav>
       </div>
-    </>
+    </ErrorBoundary>
   );
 }

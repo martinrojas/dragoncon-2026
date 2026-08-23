@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo, type FormEvent } from "react";
 import { AppBar } from "../components/CyberDragonUi";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { setupGlobalErrorCatchers } from "../lib/errorReporting";
+import { APP_VERSION } from "../lib/version";
 import type { Props } from "./admin.server";
-
 export interface User {
   id: string;
   username: string;
@@ -26,6 +28,20 @@ export interface IngestDiffSummary {
   createdEvents?: Array<{ id: string; title: string; location?: string; time?: string }>;
   updatedEvents?: Array<{ id: string; title?: string; changes?: string }>;
   deletedEvents?: Array<{ id: string; title?: string }>;
+}
+
+export interface FeedbackItem {
+  id: string;
+  userId: string | null;
+  username: string | null;
+  kind: string;
+  message: string;
+  contact: string | null;
+  appVersion: string | null;
+  userAgent: string | null;
+  pageUrl: string | null;
+  status: string;
+  createdAt: string;
 }
 
 export interface IngestResult {
@@ -97,6 +113,7 @@ export default function AdminPage(props: Props) {
     totalUsers: props.totalUsers ?? 0,
   });
 
+  const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
   const [selectedRunForLogModal, setSelectedRunForLogModal] = useState<IngestionRun | null>(null);
 
   // Load auth state from localStorage on mount
@@ -115,6 +132,22 @@ export default function AdminPage(props: Props) {
         // ignore parse error
       }
     }
+
+    const cleanupErrorCatchers = setupGlobalErrorCatchers(() => {
+      const userStr = localStorage.getItem("dc_user");
+      if (userStr) {
+        try {
+          return JSON.parse(userStr);
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    }, APP_VERSION);
+
+    return () => {
+      cleanupErrorCatchers();
+    };
   }, []);
 
   // Handle client-side login inside Admin Access Denied view
@@ -180,9 +213,10 @@ export default function AdminPage(props: Props) {
   // Refresh runs and stats from API
   const refreshDashboardData = async (authToken: string) => {
     try {
-      const [runsRes, statsRes] = await Promise.all([
+      const [runsRes, statsRes, feedbackRes] = await Promise.all([
         fetch("/api/admin/runs", { headers: { Authorization: `Bearer ${authToken}` } }),
         fetch("/api/admin/stats", { headers: { Authorization: `Bearer ${authToken}` } }),
+        fetch("/api/feedback", { headers: { Authorization: `Bearer ${authToken}` } }),
       ]);
       const runsData = (await runsRes.json()) as { success: boolean; runs?: IngestionRun[] };
       const statsData = (await statsRes.json()) as {
@@ -199,6 +233,13 @@ export default function AdminPage(props: Props) {
       }
       if (statsData.success && statsData.stats) {
         setDbStats(statsData.stats);
+      }
+      const feedbackData = (await feedbackRes.json().catch(() => ({}))) as {
+        success?: boolean;
+        feedback?: FeedbackItem[];
+      };
+      if (feedbackData.success && feedbackData.feedback) {
+        setFeedbackItems(feedbackData.feedback);
       }
     } catch (err) {
       console.error("Failed to refresh admin dashboard data", err);
@@ -281,7 +322,12 @@ export default function AdminPage(props: Props) {
   // Access Denied Render
   if (!currentUser || currentUser.role !== "admin") {
     return (
-      <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", padding: "40px 20px" }}>
+      <ErrorBoundary
+        contextName="AdminAccess"
+        user={currentUser ? { id: currentUser.id, username: currentUser.username } : null}
+        appVersion={APP_VERSION}
+      >
+        <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", padding: "40px 20px" }}>
         <div style={{ maxWidth: 460, margin: "0 auto" }}>
           <div
             className="cd-glass-panel cd-notch"
@@ -403,12 +449,18 @@ export default function AdminPage(props: Props) {
           </div>
         </div>
       </div>
-    );
+    </ErrorBoundary>
+  );
   }
 
   // Render Authenticated Admin Dashboard
   return (
-    <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", paddingBottom: 60 }}>
+    <ErrorBoundary
+      contextName="AdminDashboard"
+      user={currentUser ? { id: currentUser.id, username: currentUser.username } : null}
+      appVersion={APP_VERSION}
+    >
+      <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", paddingBottom: 60 }}>
       {/* Header AppBar */}
       <AppBar
         eyebrow="CYBERDRAGON 2026 ADMIN"
@@ -980,6 +1032,99 @@ export default function AdminPage(props: Props) {
           )}
         </div>
 
+        {/* Attendee Feedback Table */}
+        <div className="cd-glass-panel" style={{ padding: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <h4 style={{ font: "var(--type-subhead)", color: "var(--gold-400)", fontSize: 14 }}>
+              💬 ATTENDEE FEEDBACK
+            </h4>
+            <button
+              type="button"
+              onClick={() => refreshDashboardData(token)}
+              className="cd-btn cd-btn-ghost"
+              style={{ padding: "4px 8px", fontSize: 11 }}
+            >
+              Refresh Table
+            </button>
+          </div>
+
+          {feedbackItems.length === 0 ? (
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-tertiary)", fontSize: 12 }}>
+              No feedback submitted yet.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {feedbackItems.map((item) => {
+                const isBug = item.kind === "bug";
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      padding: 12,
+                      background: "rgba(255, 255, 255, 0.03)",
+                      borderRadius: "var(--r-2)",
+                      border: "1px solid rgba(255, 255, 255, 0.06)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span
+                          className="cd-badge"
+                          style={{
+                            background: isBug ? "rgba(229, 72, 77, 0.15)" : "rgba(255, 193, 7, 0.15)",
+                            color: isBug ? "var(--coral-500)" : "var(--gold-400)",
+                            border: `1px solid ${isBug ? "rgba(229, 72, 77, 0.3)" : "rgba(255, 193, 7, 0.3)"}`,
+                            fontSize: 10,
+                            padding: "2px 6px",
+                          }}
+                        >
+                          {isBug ? "BUG" : "IDEA"}
+                        </span>
+                        {item.contact === "Automated Error Report" && (
+                          <span
+                            className="cd-badge"
+                            style={{
+                              background: "rgba(168, 85, 247, 0.15)",
+                              color: "var(--purple-300)",
+                              border: "1px solid rgba(168, 85, 247, 0.3)",
+                              fontSize: 10,
+                              padding: "2px 6px",
+                            }}
+                          >
+                            AUTO-REPORT
+                          </span>
+                        )}
+                        <span style={{ fontSize: 12, color: "var(--purple-300)", fontWeight: 500 }}>
+                          @{item.username ?? "anonymous"}
+                        </span>
+                        {item.appVersion && (
+                          <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>
+                            v{item.appVersion}
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : "-"}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: 13, color: "#fff", whiteSpace: "pre-line", marginBottom: item.contact ? 6 : 0, lineHeight: 1.4 }}>
+                      {item.message}
+                    </div>
+
+                    {item.contact && (
+                      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                        <span style={{ color: "var(--text-tertiary)" }}>Contact: </span>
+                        {item.contact}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* View Log Modal */}
         {selectedRunForLogModal && (
           <div
@@ -1052,6 +1197,7 @@ export default function AdminPage(props: Props) {
           </div>
         )}
       </main>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }

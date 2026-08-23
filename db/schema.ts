@@ -76,3 +76,17 @@ export const authenticators = sqliteTable("authenticators", {
   counter: integer("counter").notNull().default(0),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
+
+export const feedback = sqliteTable("feedback", {
+  id: text("id").primaryKey(),
+  userId: text("user_id"),
+  username: text("username"),
+  kind: text("kind").notNull(),
+  message: text("message").notNull(),
+  contact: text("contact"),
+  appVersion: text("app_version"),
+  userAgent: text("user_agent"),
+  pageUrl: text("page_url"),
+  status: text("status").notNull().default("new"),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+});

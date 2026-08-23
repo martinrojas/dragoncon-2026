@@ -25,12 +25,7 @@ last_verified: 2026-08-23
 
 ## Sources
 
-| Source | Status | Notes |
-| :--- | :--- | :--- |
-| [`superpowers/specs/2026-08-22-cyberdragon-companion-app-design.md`](/docs/superpowers/specs/2026-08-22-cyberdragon-companion-app-design.md) | ✓ harvested (safe to delete) | Full design specification for UI components, walk-time matrix, and passkeys; harvested into concepts and verified. |
-| [`superpowers/plans/2026-08-22-cyberdragon-companion-app.md`](/docs/superpowers/plans/2026-08-22-cyberdragon-companion-app.md) | ✓ harvested (safe to delete) | Implementation plan; all 4 subsystem tasks completed and passing tests. |
-| [`superpowers/specs/2026-08-23-admin-ingestion-dashboard-design.md`](/docs/superpowers/specs/2026-08-23-admin-ingestion-dashboard-design.md) | — implemented | Full design specification for admin ingestion dashboard, RBAC roles, and ingestion modes. |
-| [`superpowers/plans/2026-08-23-admin-ingestion-dashboard.md`](/docs/superpowers/plans/2026-08-23-admin-ingestion-dashboard.md) | — implemented | 7-task implementation plan for admin subsystem and control UI; 66/66 unit tests passing. |
+*No active unharvested sources. All historical design specs and implementation plans have been harvested into knowledge concepts and removed.*
 
 ---
 
@@ -42,4 +37,14 @@ last_verified: 2026-08-23
 | [`AGENTS.md`](/AGENTS.md) | Agent Instructions & Working Agreements | CyberDragon Engineering |
 | [`package.json`](/package.json) | Package Manifest & Scripts | CyberDragon Engineering |
 | [`wrangler.jsonc`](/wrangler.jsonc) | Cloudflare Worker Configuration | CyberDragon Engineering |
-| [`tests/walktime.test.ts`](/tests/walktime.test.ts) | Unit Test Suite | CyberDragon Engineering |
+| [`tests/walktime.test.ts`](/tests/walktime.test.ts) | Unit Test Suite (Walk Time & Heuristics) | CyberDragon Engineering |
+| [`tests/feedback.test.ts`](/tests/feedback.test.ts) | Unit Test Suite (Feedback API) | CyberDragon Engineering |
+| [`tests/error-reporting.test.ts`](/tests/error-reporting.test.ts) | Unit Test Suite (Error Catching & Sanitization) | CyberDragon Engineering |
+| [`tests/error-boundary.test.ts`](/tests/error-boundary.test.ts) | Unit Test Suite (ErrorBoundary State & Lifecycle) | CyberDragon Engineering |
+| [`tests/maps.test.ts`](/tests/maps.test.ts) | Unit Test Suite (Venue Floor Plans & Booth Polygons) | CyberDragon Engineering |
+| [`tests/schema.test.ts`](/tests/schema.test.ts) | Unit Test Suite (D1 Schema & Migration Invariants) | CyberDragon Engineering |
+| [`tests/auth-guard.test.ts`](/tests/auth-guard.test.ts) | Unit Test Suite (Session Tokens & RBAC Guard) | CyberDragon Engineering |
+| [`tests/make-admin.test.ts`](/tests/make-admin.test.ts) | Unit Test Suite (Admin Promotion CLI) | CyberDragon Engineering |
+| [`tests/ingest-modes.test.ts`](/tests/ingest-modes.test.ts) | Unit Test Suite (Sync, Dry-Run & Hard-Resync) | CyberDragon Engineering |
+| [`tests/admin-api.test.ts`](/tests/admin-api.test.ts) | Unit Test Suite (Admin Ingestion & Stats Routes) | CyberDragon Engineering |
+| [`tests/admin-ui.test.ts`](/tests/admin-ui.test.ts) | Unit Test Suite (Admin Dashboard SSR & Head Loader) | CyberDragon Engineering |

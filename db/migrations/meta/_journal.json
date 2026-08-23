@@ -15,6 +15,13 @@
       "when": 1787469240417,
       "tag": "20260823071400_lonely_human_torch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787513424747,
+      "tag": "20260823193024_tough_catseye",
+      "breakpoints": true
     }
   ]
 }
