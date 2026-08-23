@@ -2,7 +2,7 @@
 okf_version: "0.2"
 title: Documentation Map — CyberDragon Companion App
 description: Canonical knowledge index and source registration for Dragon Con 2026 Companion App.
-last_verified: 2026-08-22
+last_verified: 2026-08-23
 ---
 
 # Knowledge Index
@@ -29,6 +29,8 @@ last_verified: 2026-08-22
 | :--- | :--- | :--- |
 | [`superpowers/specs/2026-08-22-cyberdragon-companion-app-design.md`](/docs/superpowers/specs/2026-08-22-cyberdragon-companion-app-design.md) | ✓ harvested (safe to delete) | Full design specification for UI components, walk-time matrix, and passkeys; harvested into concepts and verified. |
 | [`superpowers/plans/2026-08-22-cyberdragon-companion-app.md`](/docs/superpowers/plans/2026-08-22-cyberdragon-companion-app.md) | ✓ harvested (safe to delete) | Implementation plan; all 4 subsystem tasks completed and passing tests. |
+| [`superpowers/specs/2026-08-23-admin-ingestion-dashboard-design.md`](/docs/superpowers/specs/2026-08-23-admin-ingestion-dashboard-design.md) | — implemented | Full design specification for admin ingestion dashboard, RBAC roles, and ingestion modes. |
+| [`superpowers/plans/2026-08-23-admin-ingestion-dashboard.md`](/docs/superpowers/plans/2026-08-23-admin-ingestion-dashboard.md) | — implemented | 7-task implementation plan for admin subsystem and control UI; 66/66 unit tests passing. |
 
 ---
 

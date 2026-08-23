@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
-import { db, eq } from "void/db";
-import { eventChanges, events } from "../db/schema";
+import { and, db, eq } from "void/db";
+import { eventChanges, events } from "../db/schema.ts";
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
@@ -9,15 +9,24 @@ const USER_AGENT =
 export interface IngestOptions {
   days?: string[];
   maxDetailFetches?: number;
+  mode?: "sync" | "dry-run" | "hard-resync";
   onProgress?: (msg: string) => void;
 }
 
+export interface IngestDiffSummary {
+  createdEvents: Array<{ id: string; title: string; location: string | null; timeString: string | null }>;
+  updatedEvents: Array<{ id: string; title: string; changes: string }>;
+  deletedEvents: Array<{ id: string; title: string }>;
+}
+
 export interface IngestResult {
+  mode: "sync" | "dry-run" | "hard-resync";
   totalScraped: number;
   created: number;
   updated: number;
   deleted: number;
   errors: number;
+  diffSummary: IngestDiffSummary;
   log: string[];
 }
 
@@ -85,19 +94,43 @@ async function computeHash(data: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Computes a stable content hash for an event from its user-facing fields.
+ * Two events with identical title/location/timeString/description hash the
+ * same, regardless of internal metadata (track, parsed timestamps, etc.).
+ */
+export async function computeContentHash(
+  title: string,
+  location?: string | null,
+  timeString?: string | null,
+  description?: string | null,
+): Promise<string> {
+  return computeHash(`${title}|${location ?? ""}|${timeString ?? ""}|${description ?? ""}`);
+}
+
 export async function runIngestion(options: IngestOptions = {}): Promise<IngestResult> {
+  const mode = options.mode ?? "sync";
+  const isDryRun = mode === "dry-run";
+  const isHardResync = mode === "hard-resync";
+
   const logs: string[] = [];
   const log = (msg: string) => {
     logs.push(msg);
     if (options.onProgress) options.onProgress(msg);
   };
 
-  log("Starting Dragon Con 2026 schedule ingestion...");
+  log(`Starting Dragon Con 2026 schedule ingestion (mode: ${mode})...`);
 
   let createdCount = 0;
   let updatedCount = 0;
   let deletedCount = 0;
   let errorCount = 0;
+
+  const diffSummary: IngestDiffSummary = {
+    createdEvents: [],
+    updatedEvents: [],
+    deletedEvents: [],
+  };
 
   const daysToFetch =
     options.days && options.days.length > 0
@@ -151,11 +184,32 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
 
     log(`Found ${eventLinks.length} events for day ${dayHeader}`);
 
+    const scrapedIdsForDay = new Set<string>();
+
     const limit = options.maxDetailFetches ?? eventLinks.length;
     const targets = eventLinks.slice(0, limit);
+    const truncated = targets.length !== eventLinks.length;
+
+    // Scrape and parse every targeted event's detail page into memory
+    // first. The hard-resync day reset below only runs after this loop
+    // completes, so a handful of failed detail fetches (or a crash
+    // mid-scrape) can never wipe rows we have no replacement data for.
+    const parsedItems: Array<{
+      item: (typeof targets)[number];
+      location: string;
+      description: string;
+      track: string;
+      speakers: string[];
+      speakersJson: string;
+      startsAt: string | null;
+      endsAt: string | null;
+      durationMinutes: number;
+      contentHash: string;
+    }> = [];
 
     for (const item of targets) {
       scrapedEventIds.add(item.id);
+      scrapedIdsForDay.add(item.id);
       const detailUrl = `${BASE_URL}/event/${item.id}`;
 
       try {
@@ -202,54 +256,90 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
 
         const { startsAt, endsAt, durationMinutes } = parseDateTime(dateStr, durationStr);
 
-        const contentRaw = `${item.title}|${location}|${track}|${startsAt}|${endsAt}|${description}|${speakers.join(",")}`;
-        const contentHash = await computeHash(contentRaw);
+        const contentHash = await computeContentHash(item.title, location, item.timeStr, description);
 
-        // Check existing record
-        const [existing] = await db.select().from(events).where(eq(events.id, item.id));
+        parsedItems.push({
+          item,
+          location,
+          description,
+          track,
+          speakers,
+          speakersJson: JSON.stringify(speakers),
+          startsAt,
+          endsAt,
+          durationMinutes,
+          contentHash,
+        });
+      } catch (e: unknown) {
+        log(`Error processing event ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
+        errorCount++;
+      }
+    }
+
+    // hard-resync: reset the day only now that this run's scrape/parse pass
+    // has finished, and only for events this run actually parsed -- a
+    // failed detail fetch (or an empty listing) must never wipe rows we
+    // have no replacement data for.
+    if (isHardResync) {
+      if (parsedItems.length === 0) {
+        log(`Hard-resync: skipping wipe for ${dayHeader} -- no events were successfully parsed this run`);
+      } else {
+        const parsedIds = new Set(parsedItems.map((p) => p.item.id));
+        const existingForDay = await db.select().from(events).where(eq(events.day, dayHeader));
+        const toWipe = existingForDay.filter((ev) => parsedIds.has(ev.id));
+
+        if (toWipe.length > 0) {
+          // Already-deleted rows still need removing to avoid a primary-key
+          // conflict on re-insert, but only still-active rows count as a
+          // fresh deletion here -- an already-deleted row was counted when it
+          // was originally soft-deleted, so counting it again would double-count.
+          const activeWiped = toWipe.filter((ev) => ev.isDeleted === 0);
+          for (const ev of activeWiped) {
+            diffSummary.deletedEvents.push({ id: ev.id, title: ev.title });
+            deletedCount++;
+            await db.insert(eventChanges).values({
+              eventId: ev.id,
+              eventTitle: ev.title,
+              changeType: "deleted",
+              diffDetails: JSON.stringify({ reason: "hard-resync wipe" }),
+              detectedAt: new Date().toISOString(),
+            });
+          }
+          for (const ev of toWipe) {
+            await db.delete(events).where(eq(events.id, ev.id));
+          }
+          log(`Hard-resync: wiped ${toWipe.length} existing event(s) for ${dayHeader}`);
+        }
+      }
+    }
+
+    for (const parsed of parsedItems) {
+      try {
+        const { item, location, description, track, speakersJson, startsAt, endsAt, durationMinutes, contentHash } =
+          parsed;
+
+        // hard-resync already wiped this day's parsed rows above, so
+        // `existing` naturally comes back empty and every item takes the
+        // create path.
+        const existing = isHardResync
+          ? undefined
+          : (await db.select().from(events).where(eq(events.id, item.id)))[0];
 
         const now = new Date().toISOString();
 
         if (!existing) {
-          await db.insert(events).values({
+          diffSummary.createdEvents.push({
             id: item.id,
             title: item.title,
-            description,
-            location,
-            track,
-            startsAt,
-            endsAt,
-            durationMinutes,
-            day: dayHeader,
-            timeString: item.timeStr,
-            speakers: JSON.stringify(speakers),
-            contentHash,
-            firstSeenAt: now,
-            lastSeenAt: now,
-            isDeleted: 0,
+            location: location || null,
+            timeString: item.timeStr || null,
           });
-
-          await db.insert(eventChanges).values({
-            eventId: item.id,
-            eventTitle: item.title,
-            changeType: "created",
-            diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
-            detectedAt: now,
-          });
-
           createdCount++;
-        } else if (existing.contentHash !== contentHash || existing.isDeleted === 1) {
-          const diffs: Record<string, { old: unknown; new: unknown }> = {};
-          if (existing.title !== item.title) diffs.title = { old: existing.title, new: item.title };
-          if (existing.location !== location) diffs.location = { old: existing.location, new: location };
-          if (existing.track !== track) diffs.track = { old: existing.track, new: track };
-          if (existing.startsAt !== startsAt) diffs.startsAt = { old: existing.startsAt, new: startsAt };
-          if (existing.endsAt !== endsAt) diffs.endsAt = { old: existing.endsAt, new: endsAt };
-          if (existing.description !== description) diffs.description = { old: existing.description, new: description };
+          log(`[CREATE] ${item.title}`);
 
-          await db
-            .update(events)
-            .set({
+          if (!isDryRun) {
+            await db.insert(events).values({
+              id: item.id,
               title: item.title,
               description,
               location,
@@ -259,31 +349,130 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
               durationMinutes,
               day: dayHeader,
               timeString: item.timeStr,
-              speakers: JSON.stringify(speakers),
+              speakers: speakersJson,
               contentHash,
+              firstSeenAt: now,
               lastSeenAt: now,
               isDeleted: 0,
-            })
-            .where(eq(events.id, item.id));
+            });
 
-          await db.insert(eventChanges).values({
-            eventId: item.id,
-            eventTitle: item.title,
-            changeType: existing.isDeleted ? "uncancelled" : "updated",
-            diffDetails: JSON.stringify(diffs),
-            detectedAt: now,
-          });
-
-          updatedCount++;
+            await db.insert(eventChanges).values({
+              eventId: item.id,
+              eventTitle: item.title,
+              changeType: isHardResync ? "hard-resync" : "created",
+              diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
+              detectedAt: now,
+            });
+          }
         } else {
-          await db
-            .update(events)
-            .set({ lastSeenAt: now, isDeleted: 0 })
-            .where(eq(events.id, item.id));
+          const trackChanged = existing.track !== track;
+          const speakersChanged = existing.speakers !== speakersJson;
+          const isUncancel = existing.isDeleted === 1;
+
+          if (existing.contentHash !== contentHash || trackChanged || speakersChanged || isUncancel) {
+            const diffs: Record<string, { old: unknown; new: unknown }> = {};
+            if (existing.title !== item.title) diffs.title = { old: existing.title, new: item.title };
+            if (existing.location !== location) diffs.location = { old: existing.location, new: location };
+            if (existing.timeString !== item.timeStr) diffs.timeString = { old: existing.timeString, new: item.timeStr };
+            if (trackChanged) diffs.track = { old: existing.track, new: track };
+            if (existing.startsAt !== startsAt) diffs.startsAt = { old: existing.startsAt, new: startsAt };
+            if (existing.endsAt !== endsAt) diffs.endsAt = { old: existing.endsAt, new: endsAt };
+            if (existing.description !== description) diffs.description = { old: existing.description, new: description };
+            if (speakersChanged) diffs.speakers = { old: existing.speakers, new: speakersJson };
+
+            const hasFieldChanges = Object.keys(diffs).length > 0;
+
+            if (!hasFieldChanges) {
+              // No field actually differs (including a pure re-appearance of a
+              // previously deleted event with unchanged content) -- just
+              // refresh lastSeenAt and persist the freshly computed content
+              // hash (it may have migrated even though visible fields didn't).
+              if (!isDryRun) {
+                await db
+                  .update(events)
+                  .set({ contentHash, lastSeenAt: now, isDeleted: 0 })
+                  .where(eq(events.id, item.id));
+              }
+            } else {
+              const changeType = isUncancel ? "uncancelled" : "updated";
+              diffSummary.updatedEvents.push({
+                id: item.id,
+                title: item.title,
+                changes: Object.keys(diffs).join(", ") || "content",
+              });
+              updatedCount++;
+              log(`[UPDATE] ${item.title}: ${Object.keys(diffs).join(", ") || "content"}`);
+
+              if (!isDryRun) {
+                await db
+                  .update(events)
+                  .set({
+                    title: item.title,
+                    description,
+                    location,
+                    track,
+                    startsAt,
+                    endsAt,
+                    durationMinutes,
+                    day: dayHeader,
+                    timeString: item.timeStr,
+                    speakers: speakersJson,
+                    contentHash,
+                    lastSeenAt: now,
+                    isDeleted: 0,
+                  })
+                  .where(eq(events.id, item.id));
+
+                await db.insert(eventChanges).values({
+                  eventId: item.id,
+                  eventTitle: item.title,
+                  changeType,
+                  diffDetails: JSON.stringify(diffs),
+                  detectedAt: now,
+                });
+              }
+            }
+          } else if (!isDryRun) {
+            await db
+              .update(events)
+              .set({ lastSeenAt: now, isDeleted: 0 })
+              .where(eq(events.id, item.id));
+          }
         }
       } catch (e: unknown) {
-        log(`Error processing event ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
+        log(`Error writing event ${parsed.item.id} (${parsed.item.title}): ${e instanceof Error ? e.message : String(e)}`);
         errorCount++;
+      }
+    }
+
+    // sync/dry-run: anything previously tracked for this day that was not
+    // re-scraped is treated as removed from the schedule. Skipped when this
+    // run's target list was truncated by maxDetailFetches -- an incomplete
+    // scrape can't distinguish "removed upstream" from "not attempted".
+    if ((mode === "sync" || isDryRun) && !truncated) {
+      const missing = await db
+        .select()
+        .from(events)
+        .where(and(eq(events.day, dayHeader), eq(events.isDeleted, 0)));
+
+      for (const ev of missing) {
+        if (scrapedIdsForDay.has(ev.id)) continue;
+
+        diffSummary.deletedEvents.push({ id: ev.id, title: ev.title });
+        deletedCount++;
+        log(`[DELETE] ${ev.title} no longer found in ${dayHeader} listing`);
+
+        if (!isDryRun) {
+          const now = new Date().toISOString();
+          await db.update(events).set({ isDeleted: 1, lastSeenAt: now }).where(eq(events.id, ev.id));
+          await db.insert(eventChanges).values({
+            eventId: ev.id,
+            eventTitle: ev.title,
+            changeType: "deleted",
+            diffDetails: JSON.stringify({ reason: `missing from ${dayHeader} listing` }),
+            detectedAt: now,
+          });
+        }
       }
     }
   }
@@ -293,11 +482,13 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
   );
 
   return {
+    mode,
     totalScraped: scrapedEventIds.size,
     created: createdCount,
     updated: updatedCount,
     deleted: deletedCount,
     errors: errorCount,
+    diffSummary,
     log: logs,
   };
 }

@@ -49,10 +49,12 @@ export const POST = defineHandler(async (c: Context) => {
         createdAt: now,
       });
 
-      const token = btoa(JSON.stringify({ id: userId, username: cleanUsername, name: name.trim() }));
+      const token = btoa(
+        JSON.stringify({ id: userId, username: cleanUsername, name: name.trim(), role: "user" }),
+      );
       return c.json({
         success: true,
-        user: { id: userId, username: cleanUsername, name: name.trim() },
+        user: { id: userId, username: cleanUsername, name: name.trim(), role: "user" },
         token,
       });
     }
@@ -63,10 +65,12 @@ export const POST = defineHandler(async (c: Context) => {
         return c.json({ success: false, error: "Invalid username or password" }, 401);
       }
 
-      const token = btoa(JSON.stringify({ id: user.id, username: user.username, name: user.name }));
+      const token = btoa(
+        JSON.stringify({ id: user.id, username: user.username, name: user.name, role: user.role }),
+      );
       return c.json({
         success: true,
-        user: { id: user.id, username: user.username, name: user.name },
+        user: { id: user.id, username: user.username, name: user.name, role: user.role },
         token,
       });
     }

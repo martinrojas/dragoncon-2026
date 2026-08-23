@@ -27,7 +27,16 @@ export const loader = defineHandler(async () => {
   }
   const parseDayWeight = (d: string) => {
     const match = d.match(/\d+/);
-    return match ? parseInt(match[0], 10) : 99;
+    if (match) return parseInt(match[0], 10);
+    const lower = d.toLowerCase();
+    if (lower.includes("wed")) return 2;
+    if (lower.includes("thu")) return 3;
+    if (lower.includes("fri")) return 4;
+    if (lower.includes("sat")) return 5;
+    if (lower.includes("sun")) return 6;
+    if (lower.includes("mon")) return 7;
+    if (lower.includes("tue")) return 8;
+    return 99;
   };
 
   const sortedDays = Array.from(daysSet).sort((a, b) => parseDayWeight(a) - parseDayWeight(b));

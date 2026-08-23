@@ -5,4 +5,5 @@ dist
 *.tsbuildinfo
 .DS_Store
 reference/
+.superpowers/
 .env
