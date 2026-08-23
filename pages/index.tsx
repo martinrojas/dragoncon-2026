@@ -781,15 +781,23 @@ export default function HomePage({
     };
 
     const sortedDays = [...(days || [])].sort((a, b) => parseDayInfo(a).rank - parseDayInfo(b).rank);
+    const seen = new Set<string>();
+    const items: DayItem[] = [];
 
-    return sortedDays.map((dayStr) => {
+    for (const dayStr of sortedDays) {
       const { label, date } = parseDayInfo(dayStr);
-      return {
-        value: dayStr,
-        label,
-        date,
-      };
-    });
+      const key = `${label}-${date}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        items.push({
+          value: dayStr,
+          label,
+          date,
+        });
+      }
+    }
+
+    return items;
   }, [days]);
 
   // Contextual preceding venue helper for walk time calculations

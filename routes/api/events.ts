@@ -39,7 +39,12 @@ export const GET = defineHandler(async (c: Context) => {
   }
 
   if (day) {
-    conditions.push(like(events.day, `%${day}%`));
+    const tokens = day.replace(/,/g, " ").replace(/\s+/g, " ").trim().split(" ");
+    for (const token of tokens) {
+      if (token.length > 0) {
+        conditions.push(like(events.day, `%${token}%`));
+      }
+    }
   }
 
   if (track) {
