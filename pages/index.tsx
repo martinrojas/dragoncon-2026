@@ -298,11 +298,11 @@ export default function HomePage({
 
   // Set default day if none selected
   useEffect(() => {
-    if (!selectedDay && days && days.length > 0) {
-      const sat = days.find((d) => d.toLowerCase().includes("sat"));
-      setSelectedDay(sat || days[0]);
+    if (!selectedDay && formattedDays.length > 0) {
+      const sat = formattedDays.find((d) => d.label === "SAT");
+      setSelectedDay(sat ? sat.value : formattedDays[0].value);
     }
-  }, [days, selectedDay]);
+  }, [formattedDays, selectedDay]);
 
   // Fetch filtered events
   useEffect(() => {
@@ -743,33 +743,61 @@ export default function HomePage({
 
   // Format Day Items for DayStrip (sorted chronologically by con date)
   const formattedDays: DayItem[] = useMemo(() => {
-    const parseDateNum = (dayStr: string) => {
-      const match = dayStr.match(/\d+/);
-      return match ? parseInt(match[0], 10) : 99;
-    };
+    const standardDays = [
+      { label: "THU", date: "03", rank: 3, matchKey: "thu", fallbackValue: "Thu" },
+      { label: "FRI", date: "04", rank: 4, matchKey: "fri", fallbackValue: "Fri" },
+      { label: "SAT", date: "05", rank: 5, matchKey: "sat", fallbackValue: "Sat" },
+      { label: "SUN", date: "06", rank: 6, matchKey: "sun", fallbackValue: "Sun" },
+      { label: "MON", date: "07", rank: 7, matchKey: "mon", fallbackValue: "Mon" },
+    ];
 
-    const sortedDays = [...days].sort((a, b) => parseDateNum(a) - parseDateNum(b));
+    const combinedDays = new Set<string>();
+    for (const d of days || []) {
+      if (d) combinedDays.add(d);
+    }
 
-    return sortedDays.map((dayStr) => {
-      const parts = dayStr.split(",");
-      const dayName = parts[0]?.trim().toUpperCase() || "CON";
-      const label = dayName.slice(0, 3);
+    // Ensure all 5 core con days are present
+    for (const std of standardDays) {
+      const hasMatch = Array.from(combinedDays).some((d) => d.toLowerCase().includes(std.matchKey));
+      if (!hasMatch) {
+        combinedDays.add(std.fallbackValue);
+      }
+    }
 
-      let dateNum = "01";
-      if (parts[1]) {
-        const numMatch = parts[1].match(/\d+/);
-        if (numMatch) {
-          dateNum = numMatch[0].padStart(2, "0");
+    const parseDayInfo = (dayStr: string) => {
+      const lower = dayStr.toLowerCase();
+      const numMatch = dayStr.match(/\d+/);
+      const dateNum = numMatch ? numMatch[0].padStart(2, "0") : null;
+
+      for (const std of standardDays) {
+        if (lower.includes(std.matchKey)) {
+          return {
+            label: std.label,
+            date: dateNum || std.date,
+            rank: std.rank,
+          };
         }
       }
 
-      // Count events matching this day
-      const count = eventsList.filter((e) => e.day === dayStr).length;
+      const parts = dayStr.split(",");
+      const dayName = parts[0]?.trim().toUpperCase() || "CON";
+      return {
+        label: dayName.slice(0, 3),
+        date: dateNum || "01",
+        rank: dateNum ? parseInt(dateNum, 10) : 99,
+      };
+    };
+
+    const sortedDays = Array.from(combinedDays).sort((a, b) => parseDayInfo(a).rank - parseDayInfo(b).rank);
+
+    return sortedDays.map((dayStr) => {
+      const { label, date } = parseDayInfo(dayStr);
+      const count = eventsList.filter((e) => e.day === dayStr || (e.day && e.day.toLowerCase().includes(label.toLowerCase()))).length;
 
       return {
         value: dayStr,
         label,
-        date: dateNum,
+        date,
         count: count > 0 ? count : undefined,
       };
     });

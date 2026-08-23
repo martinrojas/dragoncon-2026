@@ -25,7 +25,21 @@ export const loader = defineHandler(async () => {
     if (ev.day) daysSet.add(ev.day);
     if (ev.location) locationsSet.add(ev.location);
   }
+  const standardCoreDays = ["Thu", "Fri", "Sat", "Sun", "Mon"];
+  for (const std of standardCoreDays) {
+    const match = Array.from(daysSet).some((d) => d.toLowerCase().includes(std.toLowerCase()));
+    if (!match) {
+      daysSet.add(std);
+    }
+  }
+
   const parseDayWeight = (d: string) => {
+    const lower = d.toLowerCase();
+    if (lower.includes("thu")) return 3;
+    if (lower.includes("fri")) return 4;
+    if (lower.includes("sat")) return 5;
+    if (lower.includes("sun")) return 6;
+    if (lower.includes("mon")) return 7;
     const match = d.match(/\d+/);
     return match ? parseInt(match[0], 10) : 99;
   };
