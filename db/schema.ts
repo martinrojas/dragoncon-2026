@@ -25,7 +25,21 @@ export const users = sqliteTable("users", {
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   avatarUrl: text("avatar_url"),
+  role: text("role").notNull().default("user"),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+});
+
+export const ingestionRuns = sqliteTable("ingestion_runs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").notNull(),
+  mode: text("mode").notNull(),
+  status: text("status").notNull(),
+  days: text("days"),
+  stats: text("stats"),
+  log: text("log"),
+  errorMessage: text("error_message"),
+  startedAt: text("started_at").notNull().default(sql`(datetime('now'))`),
+  completedAt: text("completed_at"),
 });
 
 export const userEvents = sqliteTable("user_events", {
