@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, type FormEvent } from "react";
 import { AppBar } from "../components/CyberDragonUi";
 import type { Props } from "./admin.server";
 
@@ -50,10 +50,25 @@ const DAY_OPTIONS = [
 ];
 
 export default function AdminPage(props: Props) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string>("");
-  const [authChecked, setAuthChecked] = useState(false);
-
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (typeof window !== "undefined") {
+      const savedUser = localStorage.getItem("dc_user");
+      if (savedUser) {
+        try {
+          return JSON.parse(savedUser) as User;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
+  const [token, setToken] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("dc_token") || "";
+    }
+    return "";
+  });
   // Auth form state
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -93,15 +108,17 @@ export default function AdminPage(props: Props) {
         const parsed = JSON.parse(savedUser) as User;
         setCurrentUser(parsed);
         setToken(savedToken);
+        if (parsed.role === "admin") {
+          refreshDashboardData(savedToken);
+        }
       } catch {
         // ignore parse error
       }
     }
-    setAuthChecked(true);
   }, []);
 
   // Handle client-side login inside Admin Access Denied view
-  const handleLoginSubmit = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!loginUsername.trim() || !loginPassword.trim()) {
       setLoginError("Username and password are required.");
@@ -260,14 +277,6 @@ export default function AdminPage(props: Props) {
     return terminalLogs;
   }, [terminalLogs, logFilter]);
 
-  // Loading / Auth checking render state
-  if (!authChecked) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ font: "var(--font-mono)", color: "var(--purple-300)" }}>Loading Admin Credentials...</div>
-      </div>
-    );
-  }
 
   // Access Denied Render
   if (!currentUser || currentUser.role !== "admin") {
