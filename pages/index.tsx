@@ -24,6 +24,7 @@ export interface User {
   id: string;
   username: string;
   name: string;
+  role?: string;
 }
 
 export interface EventItem {
@@ -936,6 +937,17 @@ export default function HomePage({
               title="Schedule"
               navTabs={desktopNavTabs}
               right={[
+                ...(currentUser?.role === "admin"
+                  ? [
+                      {
+                        icon: "sliders-horizontal",
+                        label: "Admin",
+                        onClick: () => {
+                          window.location.href = "/admin";
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   icon: "search",
                   label: "Search",
@@ -955,7 +967,6 @@ export default function HomePage({
                   onClick: handleRunSync,
                 },
               ]}
-            />
 
             {/* DayStrip */}
             <DayStrip days={formattedDays} value={selectedDay} onChange={setSelectedDay} />
@@ -1693,6 +1704,15 @@ export default function HomePage({
                       </div>
                     </div>
 
+                    {currentUser.role === "admin" && (
+                      <a
+                        href="/admin"
+                        className="cd-btn cd-btn-signal"
+                        style={{ textDecoration: "none", fontSize: 11, padding: "4px 8px", marginRight: 6 }}
+                      >
+                        [Admin]
+                      </a>
+                    )}
                     <span
                       className="cd-badge"
                       style={{ background: "var(--accent-quiet)", color: "var(--purple-300)", border: "1px solid var(--line-purple)" }}
