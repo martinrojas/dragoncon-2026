@@ -1,4 +1,4 @@
-# CyberDragon Companion App — Dragon Con 2026
+# CyberDragon Companion App — Dragon Con 2026 (v1.0.0)
 
 CyberDragon is a high-performance, offline-capable mobile companion Progressive Web App (PWA) designed for Dragon Con 2026 in Atlanta, GA. Built with React 19 SSR, Hono, Void, and Cloudflare Workers with D1 SQLite.
 
@@ -6,13 +6,13 @@ CyberDragon is a high-performance, offline-capable mobile companion Progressive 
 
 ## Features
 
-- **Live & Offline Schedule Grid:** Full con schedule browsing with track filtering, search, and time rail timeline.
+- **Live & Offline Schedule Grid:** Full con schedule browsing with track filtering, multi-facet search, and day/time timeline rails.
 - **Atlanta Con Floor Walk-Time Engine:** Real-time pedestrian and skybridge walk-time estimates between the 6 core host venues (Hyatt Regency, Marriott Marquis, Hilton Atlanta, Courtland Grand, Westin Peachtree Plaza, and AmericasMart).
-- **Venue Capacity & Line Status Heuristics:** Panel room capacity indicators and line wait warnings.
+- **Offline Venue Floor Plans & Room Polygon Overlays:** Interactive pinch/zoom floor plans for all 11 host venues and shuttles, glowing SVG room polygon overlays, centroid pin markers, and direct session rating links to the official Core-Apps app.
 - **Schedule Stamina & Conflict Engine:** Daily load meters tracking saved panels, active overlap conflicts, and cumulative daily walking time.
 - **WebAuthn & Passkey Authentication:** 1-click biometric passkey login/registration (Touch ID / Face ID / 1Password) backed by Cloudflare D1.
 - **Schedule ICS Export:** Generate and download standard `.ics` calendar files for Apple Calendar / Google Calendar.
-- **Automatic Ingestion:** Integrated web scraper parsing the live Dragon Con schedule data.
+- **Admin Ingestion Dashboard:** Integrated web scraper with `sync`, `dry-run`, and `hard-resync` modes, live streaming logs, diff inspect, and audit run history.
 
 ---
 
@@ -63,6 +63,9 @@ pnpm run db:migrate
 
 # Seed local database
 pnpm run db:seed
+
+# Promote a user account to administrator
+pnpm run make-admin <username>
 ```
 
 ---
@@ -100,4 +103,6 @@ Deployments are automated via `.github/workflows/deploy.yml` on push to `main`. 
   - `GET /api/changes` — Recent con schedule changes
   - `GET /api/schedule` — User saved agenda & conflict detector
   - `GET /api/export-ics` — User calendar export
-  - `POST /api/ingest` — Trigger schedule data sync
+  - `POST /api/admin/ingest` — Trigger schedule data sync
+  - `GET /api/admin/stats` — Ingestion and DB metrics
+  - `GET /api/admin/runs` — Ingestion run audit history

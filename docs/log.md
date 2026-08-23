@@ -3,6 +3,17 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-23 — Offline Venue Floor Plans & Core-Apps Integration
+
+- **Type:** Feature / UX Enhancement.
+- **Changes:**
+  - `public/maps/`: Scraped and bundled high-res offline floor plan images for all 11 host venues and shuttle routes (Marriott, Hyatt, Hilton, Westin, Courtland Grand, AmericasMart B2/B3, Convention Footprint, and shuttles).
+  - `lib/maps-data.ts` & `lib/maps.ts`: Implemented venue-to-map matching, exact booth polygon coordinate lookups, SVG polygon point formatters, and official Core-Apps deep link generators.
+  - `components/VenueMapModal.tsx`: Created interactive offline floor plan modal with zoom (+, -, reset), pan/drag, glowing SVG room polygon highlight overlays, and centroid pin markers.
+  - `components/PanelDetailModal.tsx`: Replaced misleading estimated capacity metric with clickable "VENUE FLOOR MAP" card trigger and added "⭐ RATE SESSION ↗" button linking directly to the official Core-Apps event page.
+  - `tests/maps.test.ts`: Added unit tests covering venue matching, exact booth lookups, fallback handling, URL generation, and polygon centroid calculations (73/73 tests pass).
+
+---
 ## 2026-08-23 — Knowledge Bundle Maintained
 
 - **Type:** `maintain` pass by `docsmith/1.3.0`.

@@ -109,11 +109,12 @@ flowchart TD
 | Module | Location | Purpose | Key Exports / Methods |
 | :--- | :--- | :--- | :--- |
 | **Walk Time Engine** | `lib/walktime.ts` | Calculates inter-hotel transit minutes and room capacity heuristics | `calculateWalkTime()`, `normalizeVenue()`, `getVenueCapacityStatus()` |
+| **Venue Maps & Floor Plans** | `lib/maps.ts`, `lib/maps-data.ts` | Venue resolution, booth coordinate lookup, and offline floor plan caching | `resolveVenueMap()`, `getOfficialEventUrl()`, `getPolygonPointsString()` |
 | **Ingestion Engine** | `lib/ingest.ts` | Scrapes schedule web pages and generates change diffs | `runIngestion()` |
 | **SSR Page Loader** | `pages/index.server.ts` | Pre-fetches initial events, facets, and change history on server render | `loader = defineHandler(...)` |
 | **PWA App Shell** | `pages/index.tsx` | Main application shell managing tabs, state, and sheets | `Page()` |
 | **UI Components** | `components/CyberDragonUi.tsx` | Glass design system UI components | `TabBar`, `Toast`, `DataCard`, `ProgressMeter`, `Badge`, `Tag`, `Button` |
-| **Detail Modal** | `components/PanelDetailModal.tsx` | Panel detail view with transit routing and line status | `PanelDetailModal` |
+| **Detail & Map Modals** | `components/PanelDetailModal.tsx`, `components/VenueMapModal.tsx` | Panel detail view with transit routing, offline interactive floor plan viewer, and Core-Apps rating links | `PanelDetailModal`, `VenueMapModal` |
 | **API Endpoints** | `routes/api/*.ts` | Edge HTTP handlers for schedule, auth, friends, and export | `export const GET = defineHandler(...)` |
 | **Auth Guard** | `lib/auth.ts` | Session token parsing, database role refresh, and admin authorization | `parseToken()`, `verifyUserRole()`, `getUserFromContext()`, `adminGuard()` |
 | **Admin Dashboard** | `pages/admin.tsx`, `pages/admin.server.ts` | Ingestion control center with live logs, diff inspector, and run history | `AdminPage()`, `loader = defineHandler(...)` |
