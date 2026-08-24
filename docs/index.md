@@ -2,7 +2,7 @@
 okf_version: "0.2"
 title: Documentation Map — CyberDragon Companion App
 description: Canonical knowledge index and source registration for Dragon Con 2026 Companion App.
-last_verified: 2026-08-23
+last_verified: 2026-08-24
 ---
 
 # Knowledge Index
@@ -48,3 +48,4 @@ last_verified: 2026-08-23
 | [`tests/ingest-modes.test.ts`](/tests/ingest-modes.test.ts) | Unit Test Suite (Sync, Dry-Run & Hard-Resync) | CyberDragon Engineering |
 | [`tests/admin-api.test.ts`](/tests/admin-api.test.ts) | Unit Test Suite (Admin Ingestion & Stats Routes) | CyberDragon Engineering |
 | [`tests/admin-ui.test.ts`](/tests/admin-ui.test.ts) | Unit Test Suite (Admin Dashboard SSR & Head Loader) | CyberDragon Engineering |
+| [`tests/crons.test.ts`](/tests/crons.test.ts) | Unit Test Suite (Automated Cron Job & Schedule Ingestion) | CyberDragon Engineering |

@@ -3,6 +3,22 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-24 — Automated Schedule Sync Worker Cron Trigger
+
+- **Type:** Feature / Background Automation.
+- **Changes:**
+  - `crons/sync-schedule.ts`: Configured multi-schedule Void cron job (`export const cron = [...]`):
+    - `"0 */4 * 8 *"`: Every 4 hours in late August.
+    - `"0 */4 1-2 9 *"`: Every 4 hours pre-con (Sept 1–2).
+    - `"*/30 * 3-7 9 *"`: Every 30 minutes during Dragon Con (Sept 3–7).
+    - Added `isWithinActiveWindow()` guard; handler early-returns outside the 2026 active window (Aug 24 – Sep 7).
+    - Invokes `runIngestion({ mode: "sync" })` directly with structured timing & count metrics.
+  - `tests/crons.test.ts`: Added unit and integration test suite verifying schedule arrays, active date boundary calculations, out-of-window early skips, in-window mock D1 insertions, exact timestamps, and `computeContentHash` content verification.
+- **Live Verifications:**
+  - Unit tests: `pnpm test` executed and verified (95/95 tests pass across 12 test suites).
+  - Production build: `pnpm build` verified (SSR Worker bundles `sync-schedule` chunk cleanly into `dist/ssr/`).
+
+---
 ## 2026-08-23 — Knowledge Bundle Maintained & Sources Harvested
 
 - **Type:** `maintain` pass by `docsmith/1.3.0`.
@@ -158,4 +174,4 @@ Entries are listed in reverse chronological order (newest first).
   - Production build: `pnpm build` verified (SSR Worker and static PWA assets bundle clean).
   - Cloudflare deployment: Verified live on `https://dragoncon-2026.martin-d28.workers.dev` with live D1 database `dragoncon-2026-db`.
 
-Docs-freshness: head=de18a14bc183dd6623ef5341d2eb5e4fbba1310c date=2026-08-23 pass=maintain
+Docs-freshness: head=89144bd909ac49eacd1c469679bad4fec22b7d9d date=2026-08-24 pass=maintain
