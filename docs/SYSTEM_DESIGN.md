@@ -3,8 +3,8 @@ type: System Design
 title: System Design — CyberDragon Companion App
 description: Architecture, subsystems, data model, APIs, and Cloudflare deployment for the Dragon Con 2026 Companion PWA.
 tags: [architecture, evergreen, pwa, cloudflare, react19]
-generated: { by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }]
+generated: { by: docsmith/1.3.0, at: 2026-08-24T18:00:00Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-24T18:00:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -41,6 +41,9 @@ sources:
   - id: error-boundary-code
     resource: components/ErrorBoundary.tsx:1-289
     title: React error boundary and recovery interface
+  - id: cron-sync-code
+    resource: crons/sync-schedule.ts:1-47
+    title: Cloudflare Worker automated cron sync job and date window guards
 ---
 
 # System Design — CyberDragon Companion App
@@ -131,6 +134,7 @@ flowchart TD
 | **Admin CLI** | `scripts/make-admin.ts` | Promotes a registered user account to administrator | `makeAdmin()` |
 | **Feedback & Error Reporting** | `lib/errorReporting.ts`, `routes/api/feedback.ts` | Automated crash capture, sensitive credential redaction, deduplication, and feedback collection | `reportError()`, `setupGlobalErrorCatchers()`, `formatErrorMessage()` |
 | **Error Boundary & Recovery** | `components/ErrorBoundary.tsx` | React class Error Boundary with CyberDragon glass fallback UI & reset/reload actions | `ErrorBoundary` |
+| **Automated Sync Cron** | `crons/sync-schedule.ts` | Scheduled background schedule synchronizer (every 4h pre-con, every 30m during con, early-return guard outside active window) | `default defineScheduled(...)`, `isWithinActiveWindow()`, `cron` |
 ---
 
 ## 5. Database / Data Model
@@ -305,7 +309,8 @@ For step-by-step deployment and provisioning: `docs/guides/deployment-runbook.md
   - Admin API authorization on all five protected endpoints, stats aggregation, and run history queries.
   - Attendee feedback submission validation, contact normalization, and admin-only feedback retrieval.
   - Error sanitization, Bearer/JWT/password token redaction, error signature deduplication, session rate limiting, and ErrorBoundary state transitions.
-- **Live Test Result:** 91 tests executed, 91 passed, 0 failed across 11 test suites.
+  - Cron schedule triggers, active window boundary evaluations, out-of-window skip logic, in-window D1 sync execution, and exact content hash verification.
+- **Live Test Result:** 95 tests executed, 95 passed, 0 failed across 12 test suites.
 
 ---
 
