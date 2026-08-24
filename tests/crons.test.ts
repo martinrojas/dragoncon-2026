@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { withRuntimeEnv } from "void/_env";
+import { computeContentHash } from "../lib/ingest.ts";
 import cronHandler, { cron, isWithinActiveWindow } from "../crons/sync-schedule.ts";
 
 interface FakeD1BoundStatement {
@@ -230,7 +231,13 @@ test("cron handler executes runIngestion when within active window", async () =>
     assert.strictEqual(eventRow?.time_string, "10:00 AM");
     assert.strictEqual(eventRow?.starts_at, "2026-09-03T14:00:00.000Z");
     assert.strictEqual(eventRow?.ends_at, "2026-09-03T15:00:00.000Z");
-    assert.ok(typeof eventRow?.content_hash === "string" && eventRow.content_hash.length > 0);
+    const expectedHash = await computeContentHash(
+      "Cron Job Workshop",
+      "Hyatt Regency",
+      "10:00 AM",
+      "Learn Cloudflare cron triggers in Void.",
+    );
+    assert.strictEqual(eventRow?.content_hash, expectedHash);
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
