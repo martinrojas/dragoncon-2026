@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import type { Context } from "hono";
 import { withRuntimeEnv } from "void/_env";
-import { parseToken, verifyUserRole, getUserFromContext, adminGuard, type SessionUser } from "../lib/auth.ts";
+import { parseToken, getUserFromContext, adminGuard, type SessionUser } from "../lib/auth.ts";
 
 /**
  * `getUserFromContext`/`adminGuard` read the D1 binding via `void/db`'s
@@ -113,25 +113,6 @@ test("parseToken returns null for empty string", () => {
   assert.strictEqual(parseToken(""), null);
 });
 
-// --- verifyUserRole ---
-
-test("verifyUserRole returns false for null user", () => {
-  assert.strictEqual(verifyUserRole(null), false);
-});
-
-test("verifyUserRole defaults requiredRole to admin", () => {
-  const admin: SessionUser = { id: "1", username: "a", name: "A", role: "admin" };
-  const regular: SessionUser = { id: "2", username: "b", name: "B", role: "user" };
-  assert.strictEqual(verifyUserRole(admin), true);
-  assert.strictEqual(verifyUserRole(regular), false);
-});
-
-test("verifyUserRole returns true for any authenticated user when requiredRole is user", () => {
-  const admin: SessionUser = { id: "1", username: "a", name: "A", role: "admin" };
-  const regular: SessionUser = { id: "2", username: "b", name: "B", role: "user" };
-  assert.strictEqual(verifyUserRole(admin, "user"), true);
-  assert.strictEqual(verifyUserRole(regular, "user"), true);
-});
 
 // --- getUserFromContext ---
 

@@ -125,7 +125,7 @@ flowchart TD
 | **UI Components** | `components/CyberDragonUi.tsx` | Glass design system UI components | `TabBar`, `Toast`, `DataCard`, `ProgressMeter`, `Badge`, `Tag`, `Button` |
 | **Detail & Map Modals** | `components/PanelDetailModal.tsx`, `components/VenueMapModal.tsx` | Panel detail view with transit routing, offline interactive floor plan viewer, and Core-Apps rating links | `PanelDetailModal`, `VenueMapModal` |
 | **API Endpoints** | `routes/api/*.ts` | Edge HTTP handlers for schedule, auth, friends, and export | `export const GET = defineHandler(...)` |
-| **Auth Guard** | `lib/auth.ts` | Session token parsing, database role refresh, and admin authorization | `parseToken()`, `verifyUserRole()`, `getUserFromContext()`, `adminGuard()` |
+| **Auth Guard** | `lib/auth.ts` | Session token parsing, password hashing, database role refresh, and admin authorization | `parseToken()`, `hashPassword()`, `getUserFromContext()`, `adminGuard()` |
 | **Admin Dashboard** | `pages/admin.tsx`, `pages/admin.server.ts` | Ingestion control center with live logs, diff inspector, and run history | `AdminPage()`, `loader = defineHandler(...)` |
 | **Admin Endpoints** | `routes/api/admin/*.ts` | Admin-only ingestion execution, DB stats, and audit run queries | `export const POST = defineHandler(...)` |
 | **Admin CLI** | `scripts/make-admin.ts` | Promotes a registered user account to administrator | `makeAdmin()` |
