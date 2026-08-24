@@ -33,14 +33,15 @@ export function parseToken(token: string): SessionUser | null {
   }
 }
 
-export function verifyUserRole(user: SessionUser | null, requiredRole: "admin" | "user" = "admin"): boolean {
-  if (!user) {
-    return false;
-  }
-  if (requiredRole === "admin") {
-    return user.role === "admin";
-  }
-  return true;
+/**
+ * Salted SHA-256 password hash shared by `routes/api/auth.ts` (register/login)
+ * and `routes/api/auth/passkey.ts` (passkey-user provisioning).
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const msgUint8 = new TextEncoder().encode(`dragoncon_salt_${password}`);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /**

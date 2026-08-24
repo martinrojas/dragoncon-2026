@@ -7,6 +7,7 @@ import {
 import type { Context } from "hono";
 import { defineHandler } from "void";
 import { db, eq } from "void/db";
+import { hashPassword } from "../../../lib/auth";
 import { authenticators, users } from "../../../db/schema";
 
 const RP_NAME = "Dragon Con 2026 Planner";
@@ -16,12 +17,6 @@ function getRpId(reqUrl: string): string {
   return host === "localhost" || host === "127.0.0.1" ? host : host;
 }
 
-async function hashPassword(password: string): Promise<string> {
-  const msgUint8 = new TextEncoder().encode(`dragoncon_salt_${password}`);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 export const POST = defineHandler(async (c: Context) => {
   try {

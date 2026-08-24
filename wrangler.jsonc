@@ -22,9 +22,7 @@
       "invocation_logs": true
     },
     "traces": {
-      "enabled": false,
-      "persist": true,
-      "head_sampling_rate": 1
+      "enabled": false
     }
   },
   "d1_databases": [

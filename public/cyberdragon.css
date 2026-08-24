@@ -738,3 +738,16 @@ a:active {
 .cd-select:focus {
   border-color: var(--purple-400);
 }
+
+/* Native <dialog> scrims (replaces manual overlay divs) */
+dialog.cd-scrim::backdrop {
+  background: rgba(12, 14, 17, 0.75);
+  backdrop-filter: var(--blur-scrim);
+  -webkit-backdrop-filter: var(--blur-scrim);
+}
+
+dialog.cd-scrim-strong::backdrop {
+  background: rgba(12, 14, 17, 0.85);
+  backdrop-filter: var(--blur-scrim);
+  -webkit-backdrop-filter: var(--blur-scrim);
+}

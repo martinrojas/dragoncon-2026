@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { calculateWalkTime } from "../lib/walktime";
 import { resolveVenueMap, getOfficialEventUrl } from "../lib/maps";
 import { VenueMapModal } from "./VenueMapModal";
@@ -40,16 +40,13 @@ export function PanelDetailModal({
   const mapMatch = resolveVenueMap(item.location);
   const officialEventUrl = getOfficialEventUrl(item.id);
 
-  // Close on Escape key press
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  // Native <dialog>: showModal() gives top layer, focus trap, and Escape-to-close;
+  // React's onClose wires the native `close` event back to parent state.
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !showMapModal) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, showMapModal]);
+    dialogRef.current?.showModal();
+  }, []);
 
   // Parse speakers into panelist avatars
   const panelists = item.speakers
@@ -61,34 +58,31 @@ export function PanelDetailModal({
 
   return (
     <>
-      <div
+      <dialog
+        ref={dialogRef}
+        onClose={onClose}
+        onClick={(e) => {
+          if (e.target === dialogRef.current) onClose();
+        }}
+        className="cd-glass-panel cd-notch cd-scroll cd-scrim"
         style={{
           position: "fixed",
-          inset: 0,
-          backgroundColor: "rgba(12, 14, 17, 0.75)",
-          backdropFilter: "var(--blur-scrim)",
-          WebkitBackdropFilter: "var(--blur-scrim)",
-          display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "center",
-          zIndex: 1000,
+          top: "auto",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          margin: "0 auto",
+          width: "100%",
+          maxWidth: 600,
+          maxHeight: "88vh",
+          overflowY: "auto",
+          padding: 24,
+          color: "inherit",
+          boxShadow: "var(--shadow-sheet)",
+          borderBottomLeftRadius: 0,
+          borderBottomRightRadius: 0,
         }}
-        onClick={onClose}
       >
-        <div
-          className="cd-glass-panel cd-notch cd-scroll"
-          style={{
-            width: "100%",
-            maxWidth: 600,
-            maxHeight: "88vh",
-            overflowY: "auto",
-            padding: 24,
-            boxShadow: "var(--shadow-sheet)",
-            borderBottomLeftRadius: 0,
-            borderBottomRightRadius: 0,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
           {/* Header Bar */}
           <div
             style={{
@@ -324,8 +318,7 @@ export function PanelDetailModal({
               {saved ? "✓ ON MY SCHEDULE" : "+ ADD TO SCHEDULE"}
             </button>
           </div>
-        </div>
-      </div>
+      </dialog>
 
       {/* Render offline Floor Plan Modal */}
       {showMapModal && (

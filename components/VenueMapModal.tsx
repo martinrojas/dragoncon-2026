@@ -29,16 +29,13 @@ export function VenueMapModal({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape key press
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  // Native <dialog>: showModal() gives top layer, focus trap, and Escape-to-close;
+  // React's onClose wires the native `close` event back to parent state.
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+    dialogRef.current?.showModal();
+  }, []);
 
   const pointsStr = booth ? getPolygonPointsString(booth.coordinates) : "";
   const centroidData = booth ? getBoothCentroidAndBounds(booth.coordinates) : null;
@@ -109,38 +106,28 @@ export function VenueMapModal({
   const imgHeight = map.height || 2048;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        backgroundColor: "rgba(12, 14, 17, 0.85)",
-        backdropFilter: "var(--blur-scrim)",
-        WebkitBackdropFilter: "var(--blur-scrim)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1100,
-        padding: 12,
+    <dialog
+      ref={dialogRef}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === dialogRef.current) onClose();
       }}
-      onClick={onClose}
+      className="cd-glass-panel cd-notch cd-scrim-strong"
+      style={{
+        width: "100%",
+        maxWidth: 720,
+        maxHeight: "92vh",
+        display: "flex",
+        flexDirection: "column",
+        padding: 16,
+        backgroundColor: "var(--grey-950)",
+        color: "inherit",
+        border: "1px solid var(--line-purple)",
+        borderRadius: "var(--r-modal)",
+        boxShadow: "var(--shadow-sheet)",
+        overflow: "hidden",
+      }}
     >
-      <div
-        className="cd-glass-panel cd-notch"
-        style={{
-          width: "100%",
-          maxWidth: 720,
-          maxHeight: "92vh",
-          display: "flex",
-          flexDirection: "column",
-          padding: 16,
-          backgroundColor: "var(--grey-950)",
-          border: "1px solid var(--line-purple)",
-          borderRadius: "var(--r-modal)",
-          boxShadow: "var(--shadow-sheet)",
-          overflow: "hidden",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Header Bar */}
         <div
           style={{
@@ -422,7 +409,6 @@ export function VenueMapModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </dialog>
   );
 }
