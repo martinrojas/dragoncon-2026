@@ -147,9 +147,14 @@ test("cron handler skips execution outside active window", async () => {
 test("cron handler executes runIngestion when within active window", async () => {
   const originalFetch = globalThis.fetch;
   let logOutput = "";
+  let errorOutput = "";
   const originalLog = console.log;
+  const originalError = console.error;
   console.log = (...args: unknown[]) => {
     logOutput += args.map(String).join(" ");
+  };
+  console.error = (...args: unknown[]) => {
+    errorOutput += args.map(String).join(" ");
   };
 
   try {
@@ -218,11 +223,17 @@ test("cron handler executes runIngestion when within active window", async () =>
       .prepare("SELECT * FROM events WHERE id = ?")
       .bind("101ab")
       .all().results[0] as Record<string, unknown> | undefined;
+    assert.strictEqual(errorOutput.includes("[Cron:sync-schedule] Error"), false, "Expected no cron sync errors");
     assert.ok(eventRow, "Event should have been inserted into D1 by cron sync");
     assert.strictEqual(eventRow?.title, "Cron Job Workshop");
     assert.strictEqual(eventRow?.location, "Hyatt Regency");
+    assert.strictEqual(eventRow?.time_string, "10:00 AM");
+    assert.strictEqual(eventRow?.starts_at, "2026-09-03T14:00:00.000Z");
+    assert.strictEqual(eventRow?.ends_at, "2026-09-03T15:00:00.000Z");
+    assert.ok(typeof eventRow?.content_hash === "string" && eventRow.content_hash.length > 0);
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
+    console.error = originalError;
   }
 });
