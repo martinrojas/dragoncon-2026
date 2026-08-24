@@ -704,7 +704,7 @@ export default function AdminPage(props: Props) {
                   outline: "none",
                 }}
               >
-                <option value="full">Full Run (No Detail Throttle Limit)</option>
+                <option value="full">Full Run (Capped for Safety)</option>
                 <option value="10">Test Run: Max 10 Events</option>
                 <option value="50">Test Run: Max 50 Events</option>
               </select>

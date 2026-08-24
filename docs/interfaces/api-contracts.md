@@ -187,6 +187,7 @@ Trigger manual schedule data synchronization from core-apps [^admin-ingest-route
     "maxDetailFetches": 50
   }
   ```
+- **Subrequest Safety:** `maxDetailFetches` bounds total event-detail fetches for the *whole* run, shared across every `days` entry rather than reset per day. Omit it to use the library default (`DEFAULT_DETAIL_FETCH_BUDGET` in `lib/ingest.ts`, currently 400), sized to stay under the Worker's configured `limits.subrequests` in `wrangler.jsonc`.
 - **Response Shape:**
   ```json
   {

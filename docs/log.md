@@ -3,6 +3,22 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-24 — Subrequest Limit Fix & Workers Paid Plan Upgrade
+
+- **Type:** Bugfix / Infrastructure.
+- **Root Cause:** `runIngestion()` (`lib/ingest.ts`) capped event-detail fetches per *day* via `maxDetailFetches`, defaulting to unlimited (`eventLinks.length`) when the caller omitted it. A full multi-day admin "Full Run" sync (and the bare cron / `/api/ingest` calls, which both omit `maxDetailFetches`) issued one uncapped `fetch()` per event across all 7 con days within a single Worker invocation, tripping Cloudflare's per-invocation subrequest ceiling partway through the second day (131 events) and failing every subsequent event fetch with `Too many subrequests by single Worker invocation`.
+- **Changes:**
+  - `lib/ingest.ts`: Replaced the per-day `maxDetailFetches ?? eventLinks.length` cap with a `detailFetchBudget` shared across every day in the run (decremented as events are targeted, never reset per day), defaulting to a new exported `DEFAULT_DETAIL_FETCH_BUDGET = 400` constant when the caller omits `maxDetailFetches`.
+  - `wrangler.jsonc`: Added an explicit `limits: { cpu_ms: 10000, subrequests: 2000 }` block as a deliberate platform-level ceiling on the newly upgraded Workers Paid plan.
+  - `pages/admin.tsx`: Corrected the now-inaccurate "Full Run (No Detail Throttle Limit)" dropdown label to "Full Run (Capped for Safety)".
+  - `docs/interfaces/api-contracts.md`, `docs/guides/deployment-runbook.md`, `docs/SYSTEM_DESIGN.md`: Documented the whole-run budget semantics, the Workers Paid plan upgrade, configured resource limits, and the manual dashboard steps to downgrade back to Free after the con.
+  - `tests/ingest-modes.test.ts`: Added coverage proving the budget is shared across days (not reset per day) and that the safe default applies when `maxDetailFetches` is omitted.
+- **Operational Note:** Cloudflare has no hard account-wide spend cap; a Billable Usage budget alert is informational only (email past a threshold, does not pause the Worker). Downgrade the account back to the Workers Free plan after Dragon Con 2026 con-week (Sep 7) ends to stop the recurring $5/mo charge.
+- **Live Verifications:**
+  - Unit tests: `pnpm test` executed and verified (94/94 tests pass across 12 test suites).
+  - Production build: `pnpm build` verified (SSR Worker and static PWA client bundles compile clean).
+
+---
 ## 2026-08-24 — Automated Schedule Sync Worker Cron Trigger
 
 - **Type:** Feature / Background Automation.

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { withRuntimeEnv } from "void/_env";
-import { computeContentHash, runIngestion } from "../lib/ingest.ts";
+import { computeContentHash, DEFAULT_DETAIL_FETCH_BUDGET, runIngestion } from "../lib/ingest.ts";
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 
@@ -864,4 +864,70 @@ test("sync mode persists a migrated content hash even when no visible fields cha
   const expectedHash = await computeContentHash("Migration Panel", "Room 9", "Time Z", "Desc Z");
   const updated = getEvent("aaaa9101");
   assert.strictEqual(updated?.content_hash, expectedHash);
+});
+
+// ---------------------------------------------------------------------------
+// Fix Round 3: shared per-invocation detail-fetch budget (Cloudflare
+// Workers subrequest limit safety)
+// ---------------------------------------------------------------------------
+
+test("sync mode shares the detail-fetch budget across days instead of resetting it per day", async () => {
+  const dayA = "BudgetDayA";
+  const dayAParam = "budgetdaya";
+  const dayB = "BudgetDayB";
+  const dayBParam = "budgetdayb";
+
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${dayAParam}`,
+    dayListingHtml(dayA, [
+      { id: "bbbb1001", title: "Day A Event 1", timeStr: "Time A1" },
+      { id: "bbbb1002", title: "Day A Event 2", timeStr: "Time A2" },
+    ]),
+  );
+  routes.set(`${BASE_URL}/event/bbbb1001`, detailHtml({ location: "Loc A1", description: "Desc A1" }));
+  routes.set(`${BASE_URL}/event/bbbb1002`, detailHtml({ location: "Loc A2", description: "Desc A2" }));
+
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${dayBParam}`,
+    dayListingHtml(dayB, [
+      { id: "bbbb2001", title: "Day B Event 1", timeStr: "Time B1" },
+      { id: "bbbb2002", title: "Day B Event 2 (over budget)", timeStr: "Time B2" },
+    ]),
+  );
+  routes.set(`${BASE_URL}/event/bbbb2001`, detailHtml({ location: "Loc B1", description: "Desc B1" }));
+  // bbbb2002 has no mapped detail route on purpose: a shared budget of 3
+  // (2 spent on day A, 1 left for day B) must never reach it.
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () =>
+      runIngestion({ mode: "sync", days: [dayAParam, dayBParam], maxDetailFetches: 3 }),
+    ),
+  );
+
+  assert.strictEqual(result.totalScraped, 3);
+  assert.strictEqual(result.created, 3);
+  assert.strictEqual(getEvent("bbbb2002"), undefined);
+});
+
+test("sync mode applies a safe default detail-fetch budget when maxDetailFetches is omitted", async () => {
+  const day = "DefaultBudgetDay";
+  const dayParam = "defaultbudgetday";
+  const items = Array.from({ length: DEFAULT_DETAIL_FETCH_BUDGET + 25 }, (_, i) => ({
+    id: `cccc${String(i).padStart(8, "0")}`,
+    title: `Event ${i}`,
+    timeStr: `Time ${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  // No detail routes mapped for any of them -- every detail fetch 404s and
+  // is skipped. This test only cares how many were attempted.
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "dry-run", days: [dayParam] })),
+  );
+
+  assert.strictEqual(result.totalScraped, DEFAULT_DETAIL_FETCH_BUDGET);
+  assert.strictEqual(result.created, 0);
 });

@@ -18,7 +18,7 @@ sources:
     resource: routes/api/events.ts:1-92
     title: Hono API routing and defineHandler export convention
   - id: wrangler-config
-    resource: wrangler.jsonc:1-41
+    resource: wrangler.jsonc:1-47
     title: Cloudflare Workers, custom domain, and D1 database binding configuration
   - id: package-manifest
     resource: package.json:1-39
@@ -82,7 +82,7 @@ sources:
 ### 2.2 Non-Functional Requirements
 - **Performance:** Sub-10ms Worker cold-start time and instantaneous client-side tab switching.
 - **Offline Resilience:** Service worker caching (`public/sw.js`) and client hydration resilience.
-- **Portability & Cost:** Runs on Cloudflare's free edge tier (Workers + D1) with zero server maintenance costs.
+- **Portability & Cost:** Runs on Cloudflare Workers + D1 with zero server maintenance; upgraded to the Workers Paid plan ($5/mo) with explicit `limits.cpu_ms` / `limits.subrequests` ceilings in `wrangler.jsonc` for Dragon Con 2026 con-week traffic, to be downgraded back to the Free plan afterward.
 
 ---
 

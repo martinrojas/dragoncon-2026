@@ -5,6 +5,14 @@
   "main": "dist/ssr/index.js",
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
+  "limits": {
+    // Workers Paid plan defaults to 30000ms CPU / 10000 subrequests per
+    // invocation; both are pinned below that default as a deliberate
+    // cost/safety ceiling for Dragon Con 2026 con-week traffic. Downgrade
+    // back to the Free plan after Sep 2026 once the con-week traffic ends.
+    "cpu_ms": 10000,
+    "subrequests": 2000
+  },
   "routes": [
     {
       "pattern": "dragoncon.martinrojas.dev",

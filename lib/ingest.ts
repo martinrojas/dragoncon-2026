@@ -6,8 +6,18 @@ const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+// Total event-detail fetches allowed across a whole `runIngestion` call
+// when the caller doesn't pass `maxDetailFetches`. Cloudflare enforces one
+// subrequest ceiling per Worker invocation (`limits.subrequests` in
+// wrangler.jsonc) shared by every fetch() and D1 call below; this default
+// keeps a full multi-day sync comfortably under the Workers Paid plan's
+// configured budget. Pass a larger `maxDetailFetches` explicitly (and raise
+// `limits.subrequests` to match) for a bigger one-shot run.
+export const DEFAULT_DETAIL_FETCH_BUDGET = 400;
+
 export interface IngestOptions {
   days?: string[];
+  /** Total detail-page fetches for the whole invocation (shared across every `days` entry, not per-day). Omit to use `DEFAULT_DETAIL_FETCH_BUDGET`. */
   maxDetailFetches?: number;
   mode?: "sync" | "dry-run" | "hard-resync";
   onProgress?: (msg: string) => void;
@@ -137,6 +147,10 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       ? options.days
       : ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"];
 
+  // Shared across every day below (not reset per day) so a multi-day sync
+  // can never exceed the invocation's subrequest budget.
+  let detailFetchBudget = options.maxDetailFetches ?? DEFAULT_DETAIL_FETCH_BUDGET;
+
   const scrapedEventIds = new Set<string>();
 
   for (const dayParam of daysToFetch) {
@@ -186,9 +200,10 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
 
     const scrapedIdsForDay = new Set<string>();
 
-    const limit = options.maxDetailFetches ?? eventLinks.length;
+    const limit = Math.max(0, detailFetchBudget);
     const targets = eventLinks.slice(0, limit);
     const truncated = targets.length !== eventLinks.length;
+    detailFetchBudget -= targets.length;
 
     // Scrape and parse every targeted event's detail page into memory
     // first. The hard-resync day reset below only runs after this loop
