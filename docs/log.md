@@ -3,6 +3,19 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-26 — SEO Fixes: Canonical, H1, Favicons, JSON-LD
+
+- **Type:** Feature (SEO/meta hardening from a 66/100 OG audit).
+- **Changes:**
+  - `void.json`: canonical link; `og:locale en_US`; `/favicon.ico` (48px PNG-in-ICO, Google-crawlable) + `/favicon-32x32.png` links ahead of the SVG icon; JSON-LD `@graph` with `WebSite` + `Event` (Dragon Con 2026, Sep 3–7, Atlanta, scheduled) via void head `script` support.
+  - `pages/index.tsx`: screen-reader-only `<h1>` in the app shell (the shell is chrome-heavy; no visible H1 exists by design).
+  - `pages/admin.server.ts`: `robots: noindex, nofollow` — the ingestion dashboard shouldn't rank.
+  - `public/`: `favicon.ico`, `favicon-32x32.png` generated from the icon set.
+  - `public/sw.js`: cache → `dragoncon-pwa-v4` (asset-change policy).
+- **Measured, not guessed:** the auditor's "HTML 438 KB" is the identity-encoded body; actual transfer over Cloudflare brotli/gzip is 30,670 bytes (measured via `curl -H 'Accept-Encoding: br, gzip' -w '%{size_download}'`). Compression is already on; no payload diet required. `twitter:site` → `@martinrojas` (handle provided after the initial pass).
+- **Verification:** dev-server smoke — canonical ×1, h1 ×1, single `og:locale` meta, JSON-LD parses (`WebSite`, `Event`), favicon.ico + 32px PNG serve 200 with correct types, admin serves noindex.
+
+---
 ## 2026-08-26 — Social Metadata & Brand Asset Generation
 
 - **Type:** Feature (page metadata + generated brand assets).

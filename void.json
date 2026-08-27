@@ -20,8 +20,10 @@
       { "property": "og:image:height", "content": "630" },
       { "property": "og:image:alt", "content": "CyberDragon angular dragon glyph on dark glass — Dragon Con 2026 · Sep 3–7 · Atlanta, GA" },
       { "property": "og:site_name", "content": "CyberDragon" },
+      { "property": "og:locale", "content": "en_US" },
       { "name": "twitter:card", "content": "summary_large_image" },
       { "name": "twitter:title", "content": "CyberDragon | Dragon Con 2026" },
+      { "name": "twitter:site", "content": "@martinrojas" },
       { "name": "twitter:description", "content": "Offline-first companion app for Dragon Con 2026 — schedule browsing, hotel walk times, friend sync, and live schedule changes." },
       { "name": "twitter:image", "content": "https://dragoncon.martinrojas.dev/og-image.png" },
       { "name": "mobile-web-app-capable", "content": "yes" },
@@ -29,10 +31,19 @@
       { "name": "apple-mobile-web-app-status-bar-style", "content": "black-translucent" }
     ],
     "link": [
-      { "rel": "stylesheet", "href": "/cyberdragon.css" },
-      { "rel": "manifest", "href": "/manifest.webmanifest" },
+      { "rel": "canonical", "href": "https://dragoncon.martinrojas.dev/" },
+      { "rel": "icon", "href": "/favicon.ico", "sizes": "48x48" },
+      { "rel": "icon", "type": "image/png", "sizes": "32x32", "href": "/favicon-32x32.png" },
       { "rel": "icon", "type": "image/svg+xml", "href": "/favicon.svg" },
-      { "rel": "apple-touch-icon", "href": "/apple-touch-icon.png" }
+      { "rel": "apple-touch-icon", "href": "/apple-touch-icon.png" },
+      { "rel": "stylesheet", "href": "/cyberdragon.css" },
+      { "rel": "manifest", "href": "/manifest.webmanifest" }
+    ],
+    "script": [
+      {
+        "type": "application/ld+json",
+        "innerHTML": "{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"WebSite\",\"name\":\"CyberDragon\",\"url\":\"https://dragoncon.martinrojas.dev/\",\"description\":\"Offline-first companion app for Dragon Con 2026 — schedule browsing, hotel walk times, friend sync, and live schedule changes.\",\"inLanguage\":\"en-US\"},{\"@type\":\"Event\",\"name\":\"Dragon Con 2026\",\"url\":\"https://dragoncon.martinrojas.dev/\",\"image\":\"https://dragoncon.martinrojas.dev/og-image.png\",\"startDate\":\"2026-09-03\",\"endDate\":\"2026-09-07\",\"eventStatus\":\"https://schema.org/EventScheduled\",\"eventAttendanceMode\":\"https://schema.org/OfflineEventAttendanceMode\",\"location\":{\"@type\":\"Place\",\"name\":\"Atlanta\",\"address\":{\"@type\":\"PostalAddress\",\"addressLocality\":\"Atlanta\",\"addressRegion\":\"GA\",\"addressCountry\":\"US\"}},\"description\":\"Atlanta's multi-genre fan convention spanning the downtown hotel campus — CyberDragon is the offline-first companion for its schedule.\"}]}"
+      }
     ]
   }
 }

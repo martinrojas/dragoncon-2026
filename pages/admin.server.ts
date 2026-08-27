@@ -42,6 +42,7 @@ export const head = defineHead<Props>(() => {
     title: "Admin Control Center | CyberDragon 2026",
     meta: [
       { name: "description", content: "CyberDragon 2026 Administrative Ingestion Control Dashboard" },
+      { name: "robots", content: "noindex, nofollow" },
     ],
   };
 });

@@ -976,6 +976,18 @@ export default function HomePage({
           paddingBottom: "calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 24px)",
         }}
       >
+        <h1
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            clip: "rect(0 0 0 0)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          CyberDragon — Dragon Con 2026 schedule companion (Sep 3–7, Atlanta, GA)
+        </h1>
         {/* Floating Toast Notification */}
         {toast && (
           <div className="cd-toast-container">
