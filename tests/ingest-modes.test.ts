@@ -2,10 +2,41 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { withRuntimeEnv } from "void/_env";
-import { computeContentHash, DEFAULT_DETAIL_FETCH_BUDGET, runIngestion } from "../lib/ingest.ts";
+import {
+  computeContentHash,
+  DEFAULT_DETAIL_FETCH_BUDGET,
+  runIngestion,
+  sliceDetailRegion,
+} from "../lib/ingest.ts";
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 
+
+// ---------------------------------------------------------------------------
+// sliceDetailRegion — CPU guard for full-day ingestion. Every detail-parsing
+// test below runs through it, so field-extraction coverage is implicit; these
+// cover the boundaries.
+// ---------------------------------------------------------------------------
+
+test("sliceDetailRegion drops page chrome but keeps the parsed region", () => {
+  const html =
+    `<html><head><script>${"x".repeat(5000)}</script></head><body><nav>${"menu ".repeat(500)}</nav>` +
+    `<table><tr><td>Location</td><td>Hilton 202</td></tr></table>` +
+    `<div class="section-about"><p>About this event</p></div>` +
+    `<div><span class="section_heading">Tracks</span><a>Sci-Fi</a></div>` +
+    `</body><footer>${"f".repeat(5000)}</footer></html>`;
+
+  const sliced = sliceDetailRegion(html);
+  assert.ok(sliced.length < html.length / 2, `expected a large reduction, got ${sliced.length}/${html.length}`);
+  for (const needle of ["Location", "Hilton 202", "section-about", "About this event", "section_heading", "Sci-Fi"]) {
+    assert.ok(sliced.includes(needle), `slice must retain ${needle}`);
+  }
+});
+
+test("sliceDetailRegion returns the document unchanged when its markers are absent", () => {
+  const html = "<html><body><div>no table, no about section, no headings</div></body></html>";
+  assert.strictEqual(sliceDetailRegion(html), html);
+});
 /**
  * `runIngestion` reads/writes the D1 binding via `void/db`'s runtime env
  * proxy, whose default `db` export caches its drizzle instance on first
@@ -223,6 +254,34 @@ function withFailingWrite<T>(
   return fn().finally(() => {
     sqlite.prepare = originalPrepare;
   });
+}
+
+/**
+ * Records the bound-parameter count of every statement executed during `fn`.
+ * node:sqlite accepts ~999 parameters per statement, but real D1 rejects
+ * anything over 100, so without this the limit is invisible in tests.
+ */
+function withParamRecording<T>(
+  sqlite: FakeD1Binding,
+  fn: () => Promise<T>,
+): Promise<{ result: T; statements: Array<{ sql: string; params: number }> }> {
+  const statements: Array<{ sql: string; params: number }> = [];
+  const originalPrepare = sqlite.prepare;
+  sqlite.prepare = ((sqlText: string) => {
+    const stmt = originalPrepare(sqlText);
+    return {
+      bind(...params: unknown[]) {
+        statements.push({ sql: sqlText, params: params.length });
+        return stmt.bind(...params);
+      },
+    };
+  }) as typeof sqlite.prepare;
+
+  return fn()
+    .then((result) => ({ result, statements }))
+    .finally(() => {
+      sqlite.prepare = originalPrepare;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -944,6 +1003,45 @@ test("the omitted-budget default is wired in and sized for the largest con day",
   );
 
   assert.strictEqual(result.totalScraped, 2);
+});
+
+test("no write statement exceeds D1's 100-bound-parameter limit", async () => {
+  const day = "ParamCapDay";
+  const dayParam = "paramcapday";
+  // 20 fresh events forces several multi-row INSERT chunks plus chunked
+  // pre-reads, which is where the 750-parameter statement used to be built.
+  const items = Array.from({ length: 20 }, (_, i) => ({
+    id: `ffff${String(i).padStart(8, "0")}`,
+    title: `Param Cap Event ${i}`,
+    timeStr: `Time P${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  for (const it of items) {
+    routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `Desc ${it.id}` }));
+  }
+
+  const { result, statements } = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withParamRecording(sharedFakeD1, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    ),
+  );
+
+  assert.strictEqual(result.created, 20);
+  assert.strictEqual(result.errors, 0);
+
+  const offenders = statements.filter((s) => s.params > 100);
+  assert.deepStrictEqual(
+    offenders.map((s) => `${s.params} params: ${s.sql.slice(0, 60)}`),
+    [],
+    "D1 rejects any statement binding more than 100 parameters",
+  );
+  // Sanity: recording actually observed the batched writes.
+  assert.ok(
+    statements.some((s) => s.params > 15),
+    "expected at least one multi-row statement to be recorded",
+  );
 });
 // ---------------------------------------------------------------------------
 // Fix Round 2: full-day ingestion must stay far below per-invocation
