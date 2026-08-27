@@ -29,6 +29,30 @@ const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+// The upstream app sits behind bot scoring that challenges bare datacenter
+// requests (~3% of detail fetches came back 403 on 2026-08-27). Sending the
+// header set a real browser sends drops that rate; a delayed single retry
+// below catches the rest.
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent": USER_AGENT,
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "same-origin",
+};
+function fetchWithBrowserHeaders(url: string, opts: { refererPath?: string } = {}): Promise<Response> {
+  const headers: Record<string, string> = { ...BROWSER_HEADERS };
+  if (opts.refererPath) headers.Referer = `${BASE_URL}${opts.refererPath}`;
+  return fetch(url, { headers });
+}
+
+/** Backoff before the single 403 retry; exported so tests can zero it. */
+export let RETRY_DELAY_MS = 1500;
+export function setRetryDelayForTests(ms: number): void {
+  RETRY_DELAY_MS = ms;
+}
+
 // Total event-detail fetches allowed across a whole `runIngestion` call when
 // the caller doesn't pass `maxDetailFetches`. Cron rotation gives each tick one
 // con day, and a day that truncates loses its deletion sweep, so the budget has
@@ -296,9 +320,7 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
 
     let html = "";
     try {
-      const res = await fetch(dayUrl, {
-        headers: { "User-Agent": USER_AGENT },
-      });
+      const res = await fetchWithBrowserHeaders(dayUrl);
       if (!res.ok) {
         log(`Failed to fetch ${dayUrl}: status ${res.status}`);
         errorCount++;
@@ -379,17 +401,22 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     }> = [];
 
     type ParsedItem = (typeof parsedItems)[number];
-
     /**
      * Fetches and parses one detail page. Returns null when the page is
      * unavailable or throws; logging and error counting are identical to the
      * old sequential path, so a bad page still costs exactly itself.
      */
+
     const fetchAndParse = async (item: (typeof eventLinks)[number]): Promise<ParsedItem | null> => {
       try {
-        const detailRes = await fetch(`${BASE_URL}/event/${item.id}`, {
-          headers: { "User-Agent": USER_AGENT },
-        });
+        const detailUrl = `${BASE_URL}/event/${item.id}`;
+        let detailRes = await fetchWithBrowserHeaders(detailUrl, { refererPath: "/events/view_by_day" });
+        // Upstream bot scoring 403s a random ~3% of requests; one delayed retry
+        // recovers most of them. Persistent per-ID failures are upstream gating.
+        if (detailRes.status === 403) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+          detailRes = await fetchWithBrowserHeaders(detailUrl, { refererPath: "/events/view_by_day" });
+        }
         if (!detailRes.ok) {
           log(`Skipping event ${item.id} (${item.title}): detail fetch status ${detailRes.status}`);
           return null;

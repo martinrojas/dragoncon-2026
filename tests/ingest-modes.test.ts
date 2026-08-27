@@ -5,7 +5,9 @@ import { withRuntimeEnv } from "void/_env";
 import {
   computeContentHash,
   DEFAULT_DETAIL_FETCH_BUDGET,
+  RETRY_DELAY_MS,
   runIngestion,
+  setRetryDelayForTests,
   sliceDetailRegion,
 } from "../lib/ingest.ts";
 
@@ -216,7 +218,7 @@ function detailHtml(fixture: DetailFixture): string {
  * deterministic and instant; wall-clock delays would make it timing-dependent.
  */
 function withMockedFetch<T>(
-  routes: Map<string, string>,
+  routes: Map<string, string | ((url: string) => Response | string | Promise<Response | string>)>,
   fn: () => Promise<T>,
   completionTicks?: Map<string, number>,
 ): Promise<T> {
@@ -225,11 +227,15 @@ function withMockedFetch<T>(
     const key = typeof url === "string" ? url : url.toString();
     const ticks = completionTicks?.get(key) ?? 0;
     for (let i = 0; i < ticks; i++) await Promise.resolve();
-    const body = routes.get(key);
-    if (body === undefined) {
+    const route = routes.get(key);
+    if (route === undefined) {
       return new Response("", { status: 404 });
     }
-    return new Response(body, { status: 200 });
+    if (typeof route === "function") {
+      const out = await route(key);
+      return typeof out === "string" ? new Response(out, { status: 200 }) : out;
+    }
+    return new Response(route, { status: 200 });
   }) as typeof fetch;
 
   return fn().finally(() => {
@@ -1172,6 +1178,41 @@ test("one failed detail page inside a wave does not lose its siblings", async ()
   assert.strictEqual(getEvent(items[2].id), undefined);
   for (const it of items.filter((_, i) => i !== 2)) {
     assert.ok(getEvent(it.id), `${it.id} should have been written`);
+  }
+});
+
+test("a 403 on a detail page is retried once and the event survives", async () => {
+  const day = "RetryDay";
+  const dayParam = "retryday";
+  const items = Array.from({ length: 3 }, (_, i) => ({
+    id: `eccc${String(i).padStart(8, "0")}`,
+    title: `Retry Event ${i}`,
+    timeStr: `Time R${i}`,
+  }));
+  const priorDelay = RETRY_DELAY_MS;
+  setRetryDelayForTests(0);
+  let flakyHits = 0;
+  const routes: Parameters<typeof withMockedFetch>[0] = new Map();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  for (const it of items) {
+    if (it.id !== items[1].id) {
+      routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `D` }));
+    }
+  }
+  // First request for items[1] gets challenged; the retry succeeds.
+  routes.set(`${BASE_URL}/event/${items[1].id}`, () => {
+    flakyHits += 1;
+    return flakyHits === 1 ? new Response("", { status: 403 }) : detailHtml({ location: "Recovered", description: "D" });
+  });
+  try {
+    const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    );
+    assert.strictEqual(result.created, 3, "retry after 403 must recover the event");
+    assert.strictEqual(flakyHits, 2, "exactly one retry");
+    assert.strictEqual(getEvent(items[1].id)?.location, "Recovered");
+  } finally {
+    setRetryDelayForTests(priorDelay);
   }
 });
 // ---------------------------------------------------------------------------
