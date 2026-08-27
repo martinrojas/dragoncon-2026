@@ -1212,7 +1212,7 @@ export default function AdminPage(props: Props) {
                         )}
                       </div>
                       <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : "-"}
+                        {formatRunTimestamp(item.createdAt)}
                       </span>
                     </div>
 
