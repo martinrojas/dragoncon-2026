@@ -3,6 +3,14 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-27 — ET Timestamps, Past-Day Skip Polish, PR #6
+
+- **Type:** Bug fix + capture pass.
+- Admin run history and feedback timestamps now render in `America/New_York` via `formatRunTimestamp` (`pages/admin.tsx`). Root cause: SQLite `datetime('now')` stores suffix-less UTC and bare `new Date(...).toLocaleString()` re-parsed it as the viewer's local time. Full diff: PR #6 (also carries `CACHE_NAME` v7 per repo PWA policy).
+- Cron cadence fixture aligned to manual commit `1b1472c` (Sep 1–2 every 2h, con days every 10 min) — schedule behavior itself is that commit's, not this pass's.
+- Durable knowledge harvested into new concepts: `docs/rules/ingestion-budget.md` (budget/ordering/past-day invariants) and `docs/interfaces/upstream-schedule-api.md` (`Sep++N` upstream param contract).
+
+---
 ## 2026-08-26 — Fix Weekend Schedule Starvation (Per-Day Cron Rotation + Batched Writes)
 
 - **Type:** Bug fix (data completeness — upstream events never ingested).

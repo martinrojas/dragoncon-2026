@@ -2,7 +2,7 @@
 
 > Mobile companion PWA for Dragon Con 2026 in Atlanta, GA. Built with React 19 SSR, Hono, Void, and Cloudflare Workers with D1 SQLite.
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 
 ## Project Overview
 
@@ -41,6 +41,8 @@ For full architecture details: `docs/SYSTEM_DESIGN.md`.
 - **Route Handlers:** Every endpoint in `routes/api/**/*.ts` must wrap its handler in `defineHandler` from `void` and export uppercase HTTP constants (`export const GET = defineHandler(...)`, `export const POST = defineHandler(...)`).
 - **Database:** Define tables in `db/schema.ts` using `void/schema-d1` and `void/db`. Never write raw migration SQL by hand; use `pnpm run db:generate`.
 - **Styling:** Use CyberDragon Glass design tokens in `public/cyberdragon.css` (Space Grotesk `var(--font-core)`, JetBrains Mono `var(--font-mono)`, `--canvas`, `--surface-glass-strong`, `--purple-600`, `--gold-500`, `--coral-500`).
+- **Client prefs:** Restore `localStorage` settings in the mount effect, not a `useState` initializer (SSR renders server-side); arm the persist effect only after restore (`dc_selected_day` pattern in `pages/index.tsx`).
+- **Timestamps:** Render admin times via `formatRunTimestamp` (`pages/admin.tsx`) — SQLite `datetime('now')` is suffix-less UTC and bare `new Date(...).toLocaleString()` misparses it as viewer-local.
 - **Commits:** Follow conventional commit messages (`feat:`, `fix:`, `chore:`, `docs:`, `test:`).
 
 ## Communication style
