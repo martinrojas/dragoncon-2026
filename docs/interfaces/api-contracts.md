@@ -33,7 +33,7 @@ sources:
     resource: routes/api/ingest.ts:1-28
     title: Schedule scraping ingestion handler
   - id: admin-ingest-route
-    resource: routes/api/admin/ingest.ts:1-72
+    resource: routes/api/admin/ingest.ts:1-31
     title: Admin schedule ingestion execution handler
   - id: admin-stats-route
     resource: routes/api/admin/stats.ts:1-52
@@ -44,6 +44,9 @@ sources:
   - id: feedback-route
     resource: routes/api/feedback.ts:1-69
     title: Attendee feedback submission and admin review handler
+  - id: feedback-status-route
+    resource: routes/api/feedback/[id].ts:1-40
+    title: Admin feedback triage status transition handler
   - id: cron-sync-handler
     resource: crons/sync-schedule.ts:1-47
     title: Scheduled cron trigger background handler
@@ -209,6 +212,7 @@ Trigger manual schedule data synchronization from core-apps [^admin-ingest-route
     }
   }
   ```
+- **Failure (`500`):** `{ "success": false, "error": "message" }`. The run row is always recorded (status `failed` with the error message) by `runIngestionWithRunLog()` in `lib/ingest.ts` — the single writer of `ingestion_runs` used by this route, legacy `POST /api/ingest`, and the scheduled cron.
 
 ---
 
@@ -217,7 +221,7 @@ Trigger manual schedule data synchronization from core-apps [^admin-ingest-route
 Administrative health checks, metrics, and audit history [^admin-stats-route] [^admin-runs-route].
 
 - **`GET /api/admin/stats`**: Returns active event counts, deleted event counts, per-day breakdowns, total users, and latest ingestion run summary.
-- **`GET /api/admin/runs`**: Returns 50 most recent ingestion executions with mode, status, stats summary, and completed timestamps.
+- **`GET /api/admin/runs`**: Returns 50 most recent ingestion executions — manual admin runs, legacy `POST /api/ingest` calls, and scheduled cron runs (attributed to `user_id: "cron"`) — with mode, status, stats summary, and completed timestamps.
 - **`GET /api/admin/runs/:id`**: Returns a single ingestion execution record including full captured console logs.
 
 ---
@@ -281,10 +285,23 @@ Allows attendees to submit bug reports or suggestions from the companion app, an
         "appVersion": "string | null",
         "userAgent": "string | null",
         "pageUrl": "string | null",
-        "status": "new | reviewed",
+        "status": "new | in_progress | done | archived",
         "createdAt": "ISO8601 timestamp"
       }
     ]
+  }
+  ```
+
+### `PATCH /api/feedback/:id`
+
+- **Auth:** Same admin guard as `GET` (`401` unauthenticated, `403` non-admin).
+- **Request Body:** `{ "status": "new" | "in_progress" | "done" | "archived" }` — any other value returns `400 Bad Request`; unknown `:id` returns `404 Not Found`.
+- **Lifecycle:** `new → in_progress → done | archived`, with reopen to `new` permitted from any state (last write wins).
+- **Response Shape (`200 OK`):**
+  ```json
+  {
+    "success": true,
+    "feedback": { "id": "uuid string", "status": "done", "...": "full feedback row" }
   }
   ```
 ---

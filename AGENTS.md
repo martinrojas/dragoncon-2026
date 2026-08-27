@@ -2,7 +2,7 @@
 
 > Mobile companion PWA for Dragon Con 2026 in Atlanta, GA. Built with React 19 SSR, Hono, Void, and Cloudflare Workers with D1 SQLite.
 
-Last updated: 2026-08-23
+Last updated: 2026-08-26
 
 ## Project Overview
 
@@ -64,6 +64,9 @@ Start here: `docs/SYSTEM_DESIGN.md`. Full map: `docs/index.md`.
 ### Code Quality & Testing
 - New domain logic or calculation algorithms must include unit tests in `tests/`.
 - All pull requests must pass `pnpm test` and `pnpm build` before merging.
+
+### PWA Cache Versioning
+- Any commit or PR targeting `main` that changes app code or assets must bump `CACHE_NAME` in `public/sw.js` (e.g. `dragoncon-pwa-v1` → `v2`), otherwise installed clients keep serving the stale cached bundle.
 
 ### Security & Data Sensitivity
 - Never commit credentials, tokens, or private keys to the repository.

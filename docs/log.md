@@ -3,6 +3,43 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-26 — Cron & Legacy Ingestions Now Logged in Run History
+
+- **Type:** Bugfix (missing run-history records).
+- **Root Cause:** Run rows were written only by `POST /api/admin/ingest` — the insert/update lifecycle lived in the route handler, while `lib/ingest.ts#runIngestion()` never touched `ingestion_runs`. Scheduled cron executions (`crons/sync-schedule.ts`) and legacy `POST /api/ingest` called `runIngestion()` directly, so they synced events (production events were up to date) but never appeared in the admin run history. The cron test fixture's `ingestion_runs` table also still had a pre-route-era shape (`success`, `total_scraped`) that nothing wrote.
+- **Changes:**
+  - `lib/ingest.ts`: new `runIngestionWithRunLog()` — inserts a `running` row, delegates to `runIngestion()`, then updates `completed` (stats/log/completedAt) or `failed` (errorMessage) and returns `IngestResult & { runId }`. Single writer of `ingestion_runs`; `userId` is the calling admin or the `"cron"` sentinel (column is NOT NULL — no migration).
+  - `routes/api/admin/ingest.ts`: replaced its inline insert/update lifecycle with the wrapper (route shrank 72 → 31 lines); response contract unchanged on success, failure no longer echoes `runId`.
+  - `routes/api/ingest.ts`, `crons/sync-schedule.ts`: switched to the wrapper — both now log runs; cron console line gains `Run #id` for correlation with history.
+  - `tests/crons.test.ts`: fixture table replaced with the real schema; added regression assertions that a cron execution records exactly one `completed` run attributed to `cron` with stats, plus a wrapper test proving failed runs are recorded with the error message.
+  - `docs/interfaces/api-contracts.md`: documented the failure shape, the single-writer rule, and that run history now includes cron + legacy runs.
+- **Verification:** `pnpm test` 102/102 (new regression test failed before the fix, passes after); `pnpm build` clean. Note: past cron runs ran silently — their history rows are unrecoverable; only executions after the next production deploy will appear.
+
+---
+## 2026-08-26 — Feedback Triage: Complete & Archive Workflow
+
+- **Type:** Feature (admin feedback triage).
+- **Summary:** Admins can now move attendee feedback through `new → in_progress → done | archived` (reopen to `new` allowed from any state), built on the existing `feedback.status` column — no schema migration.
+- **Changes:**
+  - `routes/api/feedback/[id].ts` (new): `PATCH /api/feedback/:id` behind `adminGuard`; validates `status` against the four-value allow-list (400 otherwise), 404 on unknown id, returns the updated row via drizzle `.returning()`.
+  - `pages/admin.tsx`: `New Only ↔ Show All` segmented toggle in the feedback panel header (default New Only); status badges (`IN PROGRESS` purple, `DONE` green, `ARCHIVED` gray) next to BUG/IDEA badges; per-state action buttons (`new`: Start/Complete/Archive · `in_progress`: Complete/Archive · `done`: Reopen/Archive · `archived`: Reopen) with handled cards dimmed to 0.55 opacity; `updateFeedbackStatus()` PATCHes and rewrites the item in local state without a full refresh; last-write-wins between concurrent admins.
+  - `tests/feedback.test.ts`: 7 new handler tests (401/403 auth, invalid & missing status 400, unknown id 404, new→done transition reflected in GET, full lifecycle incl. reopen).
+  - `docs/interfaces/api-contracts.md`: documented `PATCH /api/feedback/:id` contract + corrected the status enum in the GET response shape.
+- **Verification:**
+  - `pnpm test` 101/101 pass (was 94; +7 feedback triage tests).
+  - `pnpm build` clean (SSR Worker + client PWA bundles).
+  - Browser smoke test against local `vp dev` (admin `@martin-test-2`): Complete → card left New Only view; Show All → DONE badge, dimmed card, Reopen/Archive; Archive → ARCHIVED badge + Reopen-only; GET `/api/feedback` confirmed `done`/`archived`/`new` persisted server-side. Note: the PWA service worker (`dragoncon-pwa-v1`) served a stale admin bundle during first load — unregistering SW + clearing caches revealed the new UI; consider a cache-version bump when this ships.
+
+---
+## 2026-08-26 — Filter Injected In-App-Browser Bridge Errors from Auto-Reports
+
+- **Type:** Bugfix (error-reporting noise).
+- **Root Cause:** An auto-reported "Error invoking postMessage: Java object is gone" originates entirely inside `iabjs://navigation_performance_logger_android` — a performance logger that Android in-app-browser hosts (e.g. Meta/Facebook IAB, Google WebView) inject into every page. The host's native Java bridge peer is destroyed during WebView teardown but its beforeunload telemetry still fires, throwing into our `window` context where `lib/errorReporting.ts`'s global `window.onerror` catcher reported it. No CyberDragon code in the stack; nothing fixable client-side.
+- **Changes:**
+  - `lib/errorReporting.ts`: Extended the `onErrorHandler` ignore-list to also skip any error whose `event.filename` starts with `iabjs://` (foreign injected-script origin), alongside the existing ResizeObserver / cross-origin "Script error." filters.
+- **Verification:** `pnpm test` 94/94 pass.
+
+---
 ## 2026-08-24 — Subrequest Limit Fix & Workers Paid Plan Upgrade
 
 - **Type:** Bugfix / Infrastructure.
