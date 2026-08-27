@@ -17,8 +17,8 @@ sources:
     resource: tests/ingest-modes.test.ts:933-1107
     title: Op-ceiling, write-isolation poisoning, ordering, and past-day skip regression tests
   - id: cron-rotation
-    resource: crons/sync-schedule.ts:10-48
-    title: One con day per tick round-robin with past-day skipping
+    resource: crons/sync-schedule.ts:13-60
+    title: CADENCE_MS tick-interval map and per-tick nextSyncDays round-robin with past-day skipping
   - id: wrangler-limits
     resource: wrangler.jsonc:9-14
     title: Workers subrequests ceiling (2000) that caps per-invocation detail budgets
@@ -45,7 +45,9 @@ sources:
 
 ## Cron rotation
 
-- One con day per tick via deterministic `nextSyncDays()` round-robin; each tick gets the Worker's whole budget instead of sharing it seven ways. Rotation starts from the current day, skips passed days, and returns empty (handler no-ops) once the con is over [^cron-rotation].
+- One con day per tick via deterministic `nextSyncDays()` round-robin; each tick gets the Worker's whole budget instead of sharing it seven ways [^cron-rotation].
+- The rotation slot is `floor(now / cadenceMs) % 7`, where `cadenceMs` comes from `CADENCE_MS[controller.cron]` — the tick interval of the pattern that fired. Keying the slot to the **cadence** (not a fixed constant) is what makes each invocation advance exactly one day: a fixed 4h slot left the 10-minute con-week cadence re-syncing one day for 24 consecutive ticks. Adding a cron pattern requires a `CADENCE_MS` entry; a test asserts the two stay in sync [^cron-rotation].
+- Slots pointing at passed days collapse forward to the first live day, so the current day absorbs the freed ticks — coverage tightens as the con progresses (Sep 5: every live day within 70 min, today ~4× per cycle; Sep 7: today ~6 of 7 ticks). Returns empty (handler no-ops) once the con is over [^cron-rotation].
 - Rejected alternative: literal parallel invocations / self-fanout (one HTTP call per day). Each call would get a fresh subrequest budget, but the design adds internal auth wiring between cron and the signed route, and N-way upstream concurrency risks tripping rate limits — recorded here so it is not re-litigated [^session-log].
 
 ## Write batching
@@ -55,6 +57,6 @@ sources:
 [^ingest-module]: `lib/ingest.ts:11-24`
 [^ingest-filter]: `lib/ingest.ts:158-213`
 [^ingest-tests]: `tests/ingest-modes.test.ts:933-1107`
-[^cron-rotation]: `crons/sync-schedule.ts:10-48`
+[^cron-rotation]: `crons/sync-schedule.ts:13-60`
 [^wrangler-limits]: `wrangler.jsonc:9-14`
 [^session-log]: `docs/log.md`, entry 2026-08-26

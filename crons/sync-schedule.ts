@@ -12,11 +12,23 @@ export const cron = [
 // Saturday/Sunday whenever earlier days consumed it).
 export const SYNC_DAYS = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"] as const;
 
-const CYCLE_MS = 4 * 60 * 60 * 1000;
-/** Deterministic round-robin over SYNC_DAYS, starting from the current day;
- * skips con dates that have already passed (ET) so no tick is wasted on
- * frozen history. Returns [] once every day is behind us. */
-export function nextSyncDays(now: Date): string[] {
+/** Tick interval for each declared cron pattern. Rotation advances exactly one
+ * con day per invocation, so a tighter cadence sweeps the whole schedule more
+ * often instead of re-syncing a single day repeatedly. Unknown patterns fall
+ * back to the tightest cadence, which still advances on every tick. */
+export const CADENCE_MS: Record<string, number> = {
+  "0 */4 * 8 *": 4 * 60 * 60 * 1000,
+  "0 */2 1-2 9 *": 2 * 60 * 60 * 1000,
+  "*/10 * 3-7 9 *": 10 * 60 * 1000,
+};
+const DEFAULT_CADENCE_MS = 10 * 60 * 1000;
+
+/** Deterministic round-robin over SYNC_DAYS. The slot index is the clock
+ * divided by the active tick interval, so consecutive invocations pick
+ * consecutive days with no persisted cursor. Con dates already past (ET) are
+ * skipped, so the live window shrinks — and gets swept faster — as the con
+ * progresses. Returns [] once every day is behind us. */
+export function nextSyncDays(now: Date, cadenceMs: number = DEFAULT_CADENCE_MS): string[] {
   let etMonth = now.getUTCMonth() + 1;
   let etDay = now.getUTCDate();
   try {
@@ -39,7 +51,7 @@ export function nextSyncDays(now: Date): string[] {
     return n >= etDay;
   };
 
-  const startIdx = Math.floor(now.getTime() / CYCLE_MS) % SYNC_DAYS.length;
+  const startIdx = Math.floor(now.getTime() / cadenceMs) % SYNC_DAYS.length;
   for (let off = 0; off < SYNC_DAYS.length; off++) {
     const candidate = SYNC_DAYS[(startIdx + off) % SYNC_DAYS.length];
     if (isFuture(candidate)) return [candidate];
@@ -68,7 +80,7 @@ export default defineScheduled(async (controller, _env, _ctx) => {
     return;
   }
 
-  const days = nextSyncDays(now);
+  const days = nextSyncDays(now, CADENCE_MS[controller?.cron ?? ""] ?? DEFAULT_CADENCE_MS);
   if (days.length === 0) {
     console.log(
       `[Cron:sync-schedule] All con days have passed; nothing left to sync (${now.toISOString()})`,

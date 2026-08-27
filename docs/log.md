@@ -8,6 +8,7 @@ Entries are listed in reverse chronological order (newest first).
 - **Type:** Bug fix + capture pass.
 - Admin run history and feedback timestamps now render in `America/New_York` via `formatRunTimestamp` (`pages/admin.tsx`). Root cause: SQLite `datetime('now')` stores suffix-less UTC and bare `new Date(...).toLocaleString()` re-parsed it as the viewer's local time. Full diff: PR #6 (also carries `CACHE_NAME` v7 per repo PWA policy).
 - Cron cadence fixture aligned to manual commit `1b1472c` (Sep 1–2 every 2h, con days every 10 min) — schedule behavior itself is that commit's, not this pass's.
+- **Cron rotation advanced per 4h wall-clock bucket, not per tick.** `CYCLE_MS` was a fixed 4 hours, so the 10-minute con-week cadence re-synced the *same* con day for 24 consecutive invocations. Replaced with `CADENCE_MS[controller.cron]` (tick interval of the pattern that fired) → the slot advances exactly one day per invocation at every cadence. Regression tests: per-tick step assertion + a guard that each declared `cron` pattern has a cadence entry.
 - Durable knowledge harvested into new concepts: `docs/rules/ingestion-budget.md` (budget/ordering/past-day invariants) and `docs/interfaces/upstream-schedule-api.md` (`Sep++N` upstream param contract).
 
 ---
