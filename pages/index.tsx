@@ -161,8 +161,9 @@ export default function HomePage({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDay, setSelectedDay] = useState<string>(() => {
     if (days && days.length > 0) {
-      const sat = days.find((d) => d.toLowerCase().includes("sat"));
-      return sat || days[0];
+      const validDays = days.filter((d) => !d.toLowerCase().includes("tue"));
+      const sat = validDays.find((d) => d.toLowerCase().includes("sat"));
+      return sat || validDays[0] || "Sat";
     }
     return "Sat";
   });
@@ -815,7 +816,9 @@ export default function HomePage({
       return { label, date: dateNum, rank };
     };
 
-    const sortedDays = [...(days || [])].sort((a, b) => parseDayInfo(a).rank - parseDayInfo(b).rank);
+    const sortedDays = [...(days || [])]
+      .filter((d) => !d.toLowerCase().includes("tue"))
+      .sort((a, b) => parseDayInfo(a).rank - parseDayInfo(b).rank);
     const seen = new Set<string>();
     const items: DayItem[] = [];
 

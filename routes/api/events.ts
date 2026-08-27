@@ -71,7 +71,7 @@ export const GET = defineHandler(async (c: Context) => {
 
   for (const ev of allEvents) {
     if (ev.track) tracksSet.add(ev.track);
-    if (ev.day) daysSet.add(ev.day);
+    if (ev.day && !ev.day.toLowerCase().includes("tue")) daysSet.add(ev.day);
     if (ev.location) locationsSet.add(ev.location);
   }
 
