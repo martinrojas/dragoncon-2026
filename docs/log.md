@@ -3,6 +3,18 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-26 — Fix First-Load Stale Schedule (SW Network-First + Full SSR Payload)
+
+- **Type:** Bug fix (correctness — stale data shown as fresh).
+- **Symptom:** Production first load showed only 4–5 Saturday/Sunday events; clicking "sync" revealed the full set.
+- **Root cause:** `public/sw.js` applied stale-while-revalidate (`return cachedResponse || networkFetch`) to *every* GET, including `/api/*` responses and navigations. Any cached API URL was served stale instantly while the network refresh only updated the cache in the background, so day views flipped between per-URL cache snapshots of older ingests. Secondary: `pages/index.server.ts` shipped an arbitrary `allEvents.slice(0, 100)` as initial payload, so restored-day first paint could render a junk subset before hydration refetch.
+- **Changes:**
+  - `public/sw.js`: split strategies — `/api/*` and navigations are now network-first with cache strictly as offline fallback; stale-while-revalidate kept only for static assets. Install/activate lifecycle unchanged (`skipWaiting`, old-cache purge, `clients.claim`). `CACHE_NAME` → `dragoncon-pwa-v6`.
+  - `pages/index.server.ts`: dropped `.slice(0, 100)` — full table ships embedded (~94 KB gz at 421 rows); ponytail-ceiling comment names the per-day SSR query upgrade path if the schedule approaches ~3k events.
+  - `pages/index.tsx` (companion feature from same-day commit `a869602`): selected-day persistence via `dc_selected_day`, guarded against pre-restore writes.
+- **Verification:** headless browser with SW v6 active — planted a poisoned 1-event response at the exact app request URL in CacheStorage; subsequent fetch through the SW returned the 6 live events (old SW would have served `count:1`), reload rendered no poison and revalidation overwrote the entry (45 keys cached, offline fallback intact). SSR `__VOID_PAGE_DATA__` embeds all events (`initialEvents == totalEvents`). Selected-day persistence regression passed (Friday/Monday roundtrips).
+
+---
 ## 2026-08-26 — SEO Fixes: Canonical, H1, Favicons, JSON-LD
 
 - **Type:** Feature (SEO/meta hardening from a 66/100 OG audit).

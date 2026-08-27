@@ -1,6 +1,5 @@
-const CACHE_NAME = "dragoncon-pwa-v5";
+const CACHE_NAME = "dragoncon-pwa-v6";
 const ASSETS_TO_CACHE = ["/", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
-
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -28,7 +27,28 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
-  // Stale-while-revalidate strategy for GET requests
+  const url = new URL(event.request.url);
+
+  // Live data & shell: network-first, cache is only the offline fallback —
+  // never serve stale API payloads or stale app HTML over the network.
+  if (url.pathname.startsWith("/api/") || event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(event.request).then((cached) => cached || Response.error()),
+        ),
+    );
+    return;
+  }
+
+  // Static assets: stale-while-revalidate
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
       const cachedResponse = await cache.match(event.request);

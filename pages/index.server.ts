@@ -43,7 +43,8 @@ export const loader = defineHandler(async () => {
 
   return {
     totalEvents: allEvents.length,
-    initialEvents: allEvents.slice(0, 100),
+    // ponytail: ships whole table (~94KB gz at 421 rows); move to per-day SSR queries if the con schedule approaches ~3k events
+    initialEvents: allEvents,
     tracks: Array.from(tracksSet).sort(),
     days: sortedDays,
     locations: Array.from(locationsSet).sort(),
