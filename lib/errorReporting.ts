@@ -158,8 +158,13 @@ export function setupGlobalErrorCatchers(
   }
 
   const onErrorHandler = (event: ErrorEvent) => {
-    // Ignore trivial browser ResizeObserver errors or external script failures
-    if (event.message?.includes("ResizeObserver loop") || event.message?.includes("Script error.")) {
+    // Ignore trivial ResizeObserver errors or failures in host-app injected scripts
+    // (e.g. Android IAB bridges like iabjs://navigation_performance_logger_android)
+    if (
+      event.message?.includes("ResizeObserver loop") ||
+      event.message?.includes("Script error.") ||
+      event.filename?.startsWith("iabjs://")
+    ) {
       return;
     }
 
