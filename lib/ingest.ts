@@ -5,23 +5,48 @@ import { eventChanges, events, ingestionRuns } from "../db/schema.ts";
 
 
 
-// Rows buffered per multi-row D1 statement while flushing a parsed day.
-// Keeps a full con-scale day (~hundreds of new events) well inside the
-// Workers subrequest ceiling instead of 1-3 statements per event.
-const WRITE_CHUNK = 50;
+// D1 caps a single query at 100 bound parameters, and that cap applies per
+// statement (including statements inside a batch):
+// https://developers.cloudflare.com/d1/platform/limits/
+//
+// ID_CHUNK sizes statements that bind one parameter per row -- `WHERE id IN
+// (?, ?, ...)` reads and the bulk lastSeen UPDATE.
+const ID_CHUNK = 50;
+// ROW_CHUNK sizes multi-row INSERTs, which bind one parameter per *column* per
+// row. `events` is the widest table at 15 columns, so 6 rows = 90 parameters.
+// A 50-row insert bound 750 parameters, was rejected by D1 on every flush, and
+// silently fell back to per-row writes -- roughly 3 D1 queries per event, which
+// then ran into D1's separate 1000-queries-per-invocation ceiling on big days.
+const ROW_CHUNK = 6;
+
+// Detail pages fetched concurrently per wave. Workers allows six simultaneous
+// connections waiting on response headers per invocation, so six is the ceiling
+// worth using; beyond it fetches just queue.
+// https://developers.cloudflare.com/workers/platform/limits/#simultaneous-open-connections
+const DETAIL_CONCURRENCY = 6;
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-// Total event-detail fetches allowed across a whole `runIngestion` call
-// when the caller doesn't pass `maxDetailFetches`. Cloudflare enforces one
-// subrequest ceiling per Worker invocation (`limits.subrequests` in
-// wrangler.jsonc) shared by every fetch() and D1 call below; this default
-// keeps a full multi-day sync comfortably under the Workers Paid plan's
-// configured budget. Pass a larger `maxDetailFetches` explicitly (and raise
-// `limits.subrequests` to match) for a bigger one-shot run.
-export const DEFAULT_DETAIL_FETCH_BUDGET = 400;
+// Total event-detail fetches allowed across a whole `runIngestion` call when
+// the caller doesn't pass `maxDetailFetches`. Cron rotation gives each tick one
+// con day, and a day that truncates loses its deletion sweep, so the budget has
+// to clear the largest day (Friday ~691, Sunday 637, Saturday 660).
+//
+// The fetch budget is NOT the tightest constraint. Per invocation:
+//   - subrequests: 2000 (pinned in wrangler.jsonc; Paid default is 10,000).
+//     Counts every fetch() AND D1 call. A 691-event day ≈ 691 fetches + ~235
+//     D1 statements ≈ 930.
+//   - D1 queries: 1000, a separate D1-side cap. Multi-row inserts are sized by
+//     ROW_CHUNK to stay far below it; per-row writes would need ~1382.
+//   - CPU: `limits.cpu_ms` (10,000). Measured in production at ~18 ms/event for
+//     a full-document parse, which caps an invocation near 548 events -- less
+//     than any weekend day. `sliceDetailRegion` is what brings this back to
+//     ~6 ms/event; without it, no budget value can complete a weekend day.
+// Multi-day one-shot runs may still truncate — smallest-first ordering keeps
+// the shortfall on the largest day.
+export const DEFAULT_DETAIL_FETCH_BUDGET = 1800;
 
 export interface IngestOptions {
   days?: string[];
@@ -126,6 +151,36 @@ export async function computeContentHash(
   description?: string | null,
 ): Promise<string> {
   return computeHash(`${title}|${location ?? ""}|${timeString ?? ""}|${description ?? ""}`);
+}
+
+/**
+ * Narrows a detail page to the region the selectors below actually read, before
+ * handing it to cheerio.
+ *
+ * Upstream detail pages are ~215 KB of page chrome wrapped around ~24 KB of
+ * event content. Production measurement (Workers Logs, 400-event Sunday run):
+ * 7,300 ms CPU for 400 events = ~18 ms/event parsing the full document, so a
+ * 637-691 event day needs ~12 s and is killed by the `cpu_ms` ceiling before it
+ * can finish -- losing the deletion sweep no matter how large the fetch budget
+ * is. Parsing only the content region measured ~8 ms/event locally (5.6x), which
+ * brings a full day well inside the ceiling.
+ *
+ * Validated across 15 live detail pages sampled across a con day: byte-identical
+ * location, date, duration, description, track and speakers on every page.
+ *
+ * Returns the input untouched when the markers are absent, so unexpected markup
+ * degrades to a full-document parse rather than silently losing fields.
+ */
+export function sliceDetailRegion(html: string): string {
+  const table = html.indexOf("<table");
+  const about = html.indexOf("section-about");
+  const starts = [table, about].filter((n) => n >= 0);
+  if (starts.length === 0) return html;
+
+  const lo = Math.min(...starts);
+  const lastHeading = html.lastIndexOf("section_heading");
+  const hi = html.indexOf("</body>", Math.max(lastHeading, lo));
+  return html.slice(lo, hi < 0 ? html.length : hi);
 }
 
 export async function runIngestion(options: IngestOptions = {}): Promise<IngestResult> {
@@ -323,29 +378,24 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       contentHash: string;
     }> = [];
 
-    for (const item of eventLinks) {
-      if (detailFetchBudget <= 0) {
-        truncated = true;
-        log(
-          `Detail-fetch budget exhausted inside ${dayHeader}: ${scrapedIdsForDay.size}/${eventLinks.length} events fetched; marking day truncated (deletion scan skipped).`,
-        );
-        break;
-      }
-      detailFetchBudget--;
-      scrapedEventIds.add(item.id);
-      scrapedIdsForDay.add(item.id);
-      const detailUrl = `${BASE_URL}/event/${item.id}`;
+    type ParsedItem = (typeof parsedItems)[number];
 
+    /**
+     * Fetches and parses one detail page. Returns null when the page is
+     * unavailable or throws; logging and error counting are identical to the
+     * old sequential path, so a bad page still costs exactly itself.
+     */
+    const fetchAndParse = async (item: (typeof eventLinks)[number]): Promise<ParsedItem | null> => {
       try {
-        const detailRes = await fetch(detailUrl, {
+        const detailRes = await fetch(`${BASE_URL}/event/${item.id}`, {
           headers: { "User-Agent": USER_AGENT },
         });
         if (!detailRes.ok) {
           log(`Skipping event ${item.id} (${item.title}): detail fetch status ${detailRes.status}`);
-          continue;
+          return null;
         }
         const detailHtml = await detailRes.text();
-        const $d = cheerio.load(detailHtml);
+        const $d = cheerio.load(sliceDetailRegion(detailHtml));
 
         let location = "";
         let dateStr = "";
@@ -379,10 +429,9 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
         });
 
         const { startsAt, endsAt, durationMinutes } = parseDateTime(dateStr, durationStr);
-
         const contentHash = await computeContentHash(item.title, location, item.timeStr, description);
 
-        parsedItems.push({
+        return {
           item,
           location,
           description,
@@ -393,10 +442,48 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
           endsAt,
           durationMinutes,
           contentHash,
-        });
+        };
       } catch (e: unknown) {
         log(`Error processing event ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
         errorCount++;
+        return null;
+      }
+    };
+
+    // Fetch in waves of DETAIL_CONCURRENCY. Roughly 97% of a run's wall time is
+    // upstream I/O wait (production: 7.3 s CPU inside 258 s wall), so waves cut
+    // a 637-event day from ~6.9 min to ~70 s and keep a run well inside the
+    // 10-minute con-week cadence, which Cloudflare does not protect from
+    // overlapping. Parsing stays single-threaded, so CPU cost is unchanged.
+    //
+    // The cursor advances by the wave's actual length, never by
+    // DETAIL_CONCURRENCY: a wave trimmed by the remaining budget must leave the
+    // cursor on the first unfetched event so the next pass sees an exhausted
+    // budget and marks the day truncated. Advancing by the full stride skipped
+    // that check whenever a partial wave ended the listing, which let the
+    // deletion sweep run against an incomplete scrape.
+    let cursor = 0;
+    while (cursor < eventLinks.length) {
+      if (detailFetchBudget <= 0) {
+        truncated = true;
+        log(
+          `Detail-fetch budget exhausted inside ${dayHeader}: ${scrapedIdsForDay.size}/${eventLinks.length} events fetched; marking day truncated (deletion scan skipped).`,
+        );
+        break;
+      }
+
+      const wave = eventLinks.slice(cursor, cursor + Math.min(DETAIL_CONCURRENCY, detailFetchBudget));
+      cursor += wave.length;
+      detailFetchBudget -= wave.length;
+      for (const item of wave) {
+        scrapedEventIds.add(item.id);
+        scrapedIdsForDay.add(item.id);
+      }
+
+      // Appended in listing order rather than completion order, so parsedItems,
+      // logs and diff summaries stay deterministic.
+      for (const parsed of await Promise.all(wave.map(fetchAndParse))) {
+        if (parsed) parsedItems.push(parsed);
       }
     }
 
@@ -441,8 +528,8 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     // of chunked IN() statements instead of one SELECT per event.
     const existingById = new Map<string, typeof events.$inferSelect>();
     if (!isHardResync) {
-      for (let i = 0; i < parsedItems.length; i += WRITE_CHUNK) {
-        const ids = parsedItems.slice(i, i + WRITE_CHUNK).map((p) => p.item.id);
+      for (let i = 0; i < parsedItems.length; i += ID_CHUNK) {
+        const ids = parsedItems.slice(i, i + ID_CHUNK).map((p) => p.item.id);
         const rows = await db.select().from(events).where(inArray(events.id, ids));
         for (const row of rows) existingById.set(row.id, row);
       }
@@ -580,16 +667,21 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     }
 
     // Flush buffered writes. Multi-row statements keep a full con-scale day
-    // inside the Workers subrequest ceiling; a failed chunk degrades to the
-    // legacy one-row-at-a-time path so per-event write isolation, error
-    // counts, and logs stay identical.
+    // inside the D1 query ceiling; a failed chunk degrades to the one-row-at-a-
+    // time path so per-event write isolation, error counts, and logs stay
+    // identical. The degrade is logged: swallowing it silently is what hid a
+    // 750-bound-parameter insert that D1 rejected on every single flush.
     const flushedAt = new Date().toISOString();
-    for (let i = 0; i < pendingCreates.length; i += WRITE_CHUNK) {
-      const chunk = pendingCreates.slice(i, i + WRITE_CHUNK);
+    for (let i = 0; i < pendingCreates.length; i += ROW_CHUNK) {
+      const chunk = pendingCreates.slice(i, i + ROW_CHUNK);
       try {
         await db.insert(events).values(chunk.map((c) => c.event));
         await db.insert(eventChanges).values(chunk.map((c) => c.change));
-      } catch {
+      } catch (chunkError: unknown) {
+        log(
+          `Batched write of ${chunk.length} event(s) failed, retrying row-by-row: ` +
+            `${chunkError instanceof Error ? chunkError.message : String(chunkError)}`,
+        );
         for (const c of chunk) {
           try {
             await db.insert(events).values(c.event);
@@ -606,11 +698,11 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     for (const row of rehashRows) {
       await db.update(events).set({ contentHash: row.contentHash, lastSeenAt: flushedAt, isDeleted: 0 }).where(eq(events.id, row.id));
     }
-    for (let i = 0; i < touchIds.length; i += WRITE_CHUNK) {
+    for (let i = 0; i < touchIds.length; i += ID_CHUNK) {
       await db
         .update(events)
         .set({ lastSeenAt: flushedAt, isDeleted: 0 })
-        .where(inArray(events.id, touchIds.slice(i, i + WRITE_CHUNK)));
+        .where(inArray(events.id, touchIds.slice(i, i + ID_CHUNK)));
     }
 
     // sync/dry-run: anything previously tracked for this day that was not

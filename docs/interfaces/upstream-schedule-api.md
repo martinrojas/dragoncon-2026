@@ -29,8 +29,13 @@ Scrape source: `https://app.core-apps.com/dragoncon26`.
 
 ## Observed day sizes (Sep 2026 con)
 
-Wed 4 · Thu 129 · Fri 271 · Sat 601 · Sun 637 · Mon/Tue small (inferred, not verified — from production ingestion logs) [^upstream-session]
+- **Sun `Sep++6`: 637 events** — from a production run log (`Found 637 events for day Sunday, Sep  6`).
+- **Sat `Sep++5`: 660 events** — counted from a live listing fetch on 2026-08-27.
+- **Fri `Sep++4`: ~691 events** — operator-confirmed.
+- Wed 4 · Thu 129 · Mon/Tue small — read off older ingestion logs, not re-verified; treat as order-of-magnitude. An earlier revision of this doc recorded Friday as 271 from those same logs and was wrong by 2.5×, so the unverified figures here likely under-report [^upstream-session].
+- Listings grow as programming is added, so sizing decisions must assume headroom above the largest confirmed number rather than matching it; see `rules/ingestion-budget.md`.
+- Detail pages are **~215 KB** each, of which only ~24 KB is event content — the reason `sliceDetailRegion` exists.
 
-[^alias-map]: `lib/ingest.ts:158-167`
-[^alias-test]: `tests/ingest-modes.test.ts:980-998`
+[^alias-map]: `lib/ingest.ts:207-215`
+[^alias-test]: `tests/ingest-modes.test.ts:1092-1110`
 [^upstream-session]: session 2026-08-27

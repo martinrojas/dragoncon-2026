@@ -2,10 +2,41 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { withRuntimeEnv } from "void/_env";
-import { computeContentHash, DEFAULT_DETAIL_FETCH_BUDGET, runIngestion } from "../lib/ingest.ts";
+import {
+  computeContentHash,
+  DEFAULT_DETAIL_FETCH_BUDGET,
+  runIngestion,
+  sliceDetailRegion,
+} from "../lib/ingest.ts";
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 
+
+// ---------------------------------------------------------------------------
+// sliceDetailRegion — CPU guard for full-day ingestion. Every detail-parsing
+// test below runs through it, so field-extraction coverage is implicit; these
+// cover the boundaries.
+// ---------------------------------------------------------------------------
+
+test("sliceDetailRegion drops page chrome but keeps the parsed region", () => {
+  const html =
+    `<html><head><script>${"x".repeat(5000)}</script></head><body><nav>${"menu ".repeat(500)}</nav>` +
+    `<table><tr><td>Location</td><td>Hilton 202</td></tr></table>` +
+    `<div class="section-about"><p>About this event</p></div>` +
+    `<div><span class="section_heading">Tracks</span><a>Sci-Fi</a></div>` +
+    `</body><footer>${"f".repeat(5000)}</footer></html>`;
+
+  const sliced = sliceDetailRegion(html);
+  assert.ok(sliced.length < html.length / 2, `expected a large reduction, got ${sliced.length}/${html.length}`);
+  for (const needle of ["Location", "Hilton 202", "section-about", "About this event", "section_heading", "Sci-Fi"]) {
+    assert.ok(sliced.includes(needle), `slice must retain ${needle}`);
+  }
+});
+
+test("sliceDetailRegion returns the document unchanged when its markers are absent", () => {
+  const html = "<html><body><div>no table, no about section, no headings</div></body></html>";
+  assert.strictEqual(sliceDetailRegion(html), html);
+});
 /**
  * `runIngestion` reads/writes the D1 binding via `void/db`'s runtime env
  * proxy, whose default `db` export caches its drizzle instance on first
@@ -175,11 +206,25 @@ function detailHtml(fixture: DetailFixture): string {
   </body></html>`;
 }
 
-/** Installs a fetch mock keyed by exact URL for the duration of one test. */
-function withMockedFetch<T>(routes: Map<string, string>, fn: () => Promise<T>): Promise<T> {
+/**
+ * Installs a fetch mock keyed by exact URL for the duration of one test.
+ *
+ * `completionTicks` holds per-URL microtask yield counts. Concurrent fetches all
+ * start before any resolves, so a URL with more yields completes later — which
+ * lets a test force detail pages to *complete* out of listing order and prove
+ * that waves still append results deterministically. Microtask yields keep this
+ * deterministic and instant; wall-clock delays would make it timing-dependent.
+ */
+function withMockedFetch<T>(
+  routes: Map<string, string>,
+  fn: () => Promise<T>,
+  completionTicks?: Map<string, number>,
+): Promise<T> {
   const original = global.fetch;
   global.fetch = (async (url: string | URL) => {
     const key = typeof url === "string" ? url : url.toString();
+    const ticks = completionTicks?.get(key) ?? 0;
+    for (let i = 0; i < ticks; i++) await Promise.resolve();
     const body = routes.get(key);
     if (body === undefined) {
       return new Response("", { status: 404 });
@@ -223,6 +268,34 @@ function withFailingWrite<T>(
   return fn().finally(() => {
     sqlite.prepare = originalPrepare;
   });
+}
+
+/**
+ * Records the bound-parameter count of every statement executed during `fn`.
+ * node:sqlite accepts ~999 parameters per statement, but real D1 rejects
+ * anything over 100, so without this the limit is invisible in tests.
+ */
+function withParamRecording<T>(
+  sqlite: FakeD1Binding,
+  fn: () => Promise<T>,
+): Promise<{ result: T; statements: Array<{ sql: string; params: number }> }> {
+  const statements: Array<{ sql: string; params: number }> = [];
+  const originalPrepare = sqlite.prepare;
+  sqlite.prepare = ((sqlText: string) => {
+    const stmt = originalPrepare(sqlText);
+    return {
+      bind(...params: unknown[]) {
+        statements.push({ sql: sqlText, params: params.length });
+        return stmt.bind(...params);
+      },
+    };
+  }) as typeof sqlite.prepare;
+
+  return fn()
+    .then((result) => ({ result, statements }))
+    .finally(() => {
+      sqlite.prepare = originalPrepare;
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -910,26 +983,196 @@ test("sync mode shares the detail-fetch budget across days instead of resetting 
   assert.strictEqual(getEvent("bbbb2002"), undefined);
 });
 
-test("sync mode applies a safe default detail-fetch budget when maxDetailFetches is omitted", async () => {
+test("the omitted-budget default is wired in and sized for the largest con day", async () => {
+  // Sizing: cron rotation gives one invocation one con day, so the default has
+  // to clear the biggest day (Friday ~691 events) or that day truncates and
+  // silently loses its deletion sweep. Upper bound keeps the run inside the
+  // Workers subrequests=2000 ceiling once batched D1 writes are counted.
+  assert.ok(
+    DEFAULT_DETAIL_FETCH_BUDGET >= 700,
+    `default budget ${DEFAULT_DETAIL_FETCH_BUDGET} cannot complete a ~691-event day`,
+  );
+  assert.ok(
+    DEFAULT_DETAIL_FETCH_BUDGET <= 1900,
+    `default budget ${DEFAULT_DETAIL_FETCH_BUDGET} risks the 2000-subrequest ceiling`,
+  );
+
+  // Wiring: omitting maxDetailFetches must fall back to the default, not to
+  // zero. Truncation *at* a budget is covered by the explicit-budget tests.
   const day = "DefaultBudgetDay";
   const dayParam = "defaultbudgetday";
-  const items = Array.from({ length: DEFAULT_DETAIL_FETCH_BUDGET + 25 }, (_, i) => ({
-    id: `cccc${String(i).padStart(8, "0")}`,
-    title: `Event ${i}`,
-    timeStr: `Time ${i}`,
-  }));
-
   const routes = new Map<string, string>();
-  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
-  // No detail routes mapped for any of them -- every detail fetch 404s and
-  // is skipped. This test only cares how many were attempted.
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${dayParam}`,
+    dayListingHtml(day, [
+      { id: "cccc00000001", title: "Default Budget Event 1", timeStr: "Time D1" },
+      { id: "cccc00000002", title: "Default Budget Event 2", timeStr: "Time D2" },
+    ]),
+  );
+  routes.set(`${BASE_URL}/event/cccc00000001`, detailHtml({ location: "Room D1", description: "Desc D1" }));
+  routes.set(`${BASE_URL}/event/cccc00000002`, detailHtml({ location: "Room D2", description: "Desc D2" }));
 
   const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
     withMockedFetch(routes, () => runIngestion({ mode: "dry-run", days: [dayParam] })),
   );
 
-  assert.strictEqual(result.totalScraped, DEFAULT_DETAIL_FETCH_BUDGET);
-  assert.strictEqual(result.created, 0);
+  assert.strictEqual(result.totalScraped, 2);
+});
+
+test("no write statement exceeds D1's 100-bound-parameter limit", async () => {
+  const day = "ParamCapDay";
+  const dayParam = "paramcapday";
+  // 20 fresh events forces several multi-row INSERT chunks plus chunked
+  // pre-reads, which is where the 750-parameter statement used to be built.
+  const items = Array.from({ length: 20 }, (_, i) => ({
+    id: `ffff${String(i).padStart(8, "0")}`,
+    title: `Param Cap Event ${i}`,
+    timeStr: `Time P${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  for (const it of items) {
+    routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `Desc ${it.id}` }));
+  }
+
+  const { result, statements } = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withParamRecording(sharedFakeD1, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    ),
+  );
+
+  assert.strictEqual(result.created, 20);
+  assert.strictEqual(result.errors, 0);
+
+  const offenders = statements.filter((s) => s.params > 100);
+  assert.deepStrictEqual(
+    offenders.map((s) => `${s.params} params: ${s.sql.slice(0, 60)}`),
+    [],
+    "D1 rejects any statement binding more than 100 parameters",
+  );
+  // Sanity: recording actually observed the batched writes.
+  assert.ok(
+    statements.some((s) => s.params > 15),
+    "expected at least one multi-row statement to be recorded",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Fix Round 5: detail fetches run in concurrent waves (6 simultaneous
+// connections is the Workers per-invocation ceiling), which must not change
+// result ordering, budget accounting, or truncation semantics.
+// ---------------------------------------------------------------------------
+
+test("concurrent waves append results in listing order even when fetches finish out of order", async () => {
+  const day = "WaveOrderDay";
+  const dayParam = "waveorderday";
+  const items = Array.from({ length: 6 }, (_, i) => ({
+    id: `9aaa${String(i).padStart(8, "0")}`,
+    title: `Wave Event ${i}`,
+    timeStr: `Time W${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  // Reverse the completion order inside the wave: the first listing entry
+  // resolves last, the last resolves first.
+  const ticks = new Map<string, number>();
+  items.forEach((it, i) => {
+    routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${i}`, description: `Desc ${i}` }));
+    ticks.set(`${BASE_URL}/event/${it.id}`, (items.length - i) * 4);
+  });
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] }), ticks),
+  );
+
+  assert.strictEqual(result.created, 6);
+  assert.deepStrictEqual(
+    result.diffSummary.createdEvents.map((e) => e.id),
+    items.map((it) => it.id),
+    "created events must follow listing order, not completion order",
+  );
+});
+
+test("a wave trimmed by the remaining budget still truncates the day", async () => {
+  // Two shapes matter:
+  //  - listing shorter than the wave stride (5 events, budget 3): advancing the
+  //    cursor by the stride instead of the wave length jumped past the end of
+  //    the listing, skipped the budget-exhausted check, and let the deletion
+  //    sweep run against a partial scrape.
+  //  - multi-wave with a trimmed tail (15 events, budget 8): the budget must
+  //    still bound fetches exactly when it is not a multiple of the stride.
+  const cases = [
+    { label: "short listing", prefix: "9bbb", size: 5, budget: 3 },
+    { label: "trimmed tail", prefix: "9bcc", size: 15, budget: 8 },
+  ];
+
+  for (const { label, prefix, size, budget } of cases) {
+    const day = `WaveBudgetDay-${prefix}`;
+    const dayParam = `wavebudgetday${prefix}`;
+    const items = Array.from({ length: size }, (_, i) => ({
+      id: `${prefix}${String(i).padStart(8, "0")}`,
+      title: `Budget Wave Event ${i}`,
+      timeStr: `Time B${i}`,
+    }));
+
+    // A pre-existing row the deletion sweep would soft-delete if a partial
+    // scrape were ever mistaken for a complete one.
+    const staleId = `${prefix}99999999`;
+    insertEvent({
+      id: staleId,
+      title: "Wave Stale Panel",
+      day,
+      location: "Room S",
+      timeString: "Old",
+      description: "",
+      contentHash: await computeContentHash("Wave Stale Panel", "Room S", "Old", ""),
+    });
+
+    const routes = new Map<string, string>();
+    routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+    for (const it of items) {
+      routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `Desc ${it.id}` }));
+    }
+
+    const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam], maxDetailFetches: budget })),
+    );
+
+    assert.strictEqual(result.totalScraped, budget, `${label}: budget must bound fetches exactly`);
+    assert.strictEqual(result.created, budget, `${label}: every fetched event should be created`);
+    assert.strictEqual(result.deleted, 0, `${label}: a truncated day must not run the deletion sweep`);
+    assert.strictEqual(getEvent(staleId)?.is_deleted, 0, `${label}: stale row must survive a partial scrape`);
+    assert.strictEqual(getEvent(items[budget].id), undefined, `${label}: events past the budget must not be fetched`);
+  }
+});
+
+test("one failed detail page inside a wave does not lose its siblings", async () => {
+  const day = "WaveErrorDay";
+  const dayParam = "waveerrorday";
+  const items = Array.from({ length: 4 }, (_, i) => ({
+    id: `9ccc${String(i).padStart(8, "0")}`,
+    title: `Wave Error Event ${i}`,
+    timeStr: `Time E${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  // items[2] intentionally has no detail route: it 404s mid-wave.
+  for (const it of items.filter((_, i) => i !== 2)) {
+    routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `Desc ${it.id}` }));
+  }
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+  );
+
+  assert.strictEqual(result.created, 3, "siblings of a failed page must still persist");
+  assert.strictEqual(getEvent(items[2].id), undefined);
+  for (const it of items.filter((_, i) => i !== 2)) {
+    assert.ok(getEvent(it.id), `${it.id} should have been written`);
+  }
 });
 // ---------------------------------------------------------------------------
 // Fix Round 2: full-day ingestion must stay far below per-invocation

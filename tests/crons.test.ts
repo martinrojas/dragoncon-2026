@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { withRuntimeEnv } from "void/_env";
 import { computeContentHash, runIngestionWithRunLog } from "../lib/ingest.ts";
-import cronHandler, { cron, isWithinActiveWindow, nextSyncDays, SYNC_DAYS } from "../crons/sync-schedule.ts";
+import cronHandler, { CADENCE_MS, cron, isWithinActiveWindow, nextSyncDays, SYNC_DAYS } from "../crons/sync-schedule.ts";
 
 interface FakeD1BoundStatement {
   raw(): unknown[][];
@@ -290,6 +290,32 @@ test("nextSyncDays rotates through every con day deterministically", () => {
   }
   for (const day of SYNC_DAYS) {
     assert.ok(picks.includes(day), `${day} should be covered each cycle`);
+  }
+});
+
+test("nextSyncDays advances exactly one day per tick at the con-week cadence", () => {
+  const TEN_MIN = 10 * 60 * 1000;
+  const start = Date.UTC(2026, 7, 28); // August: every con day is still ahead
+  const picks = Array.from(
+    { length: SYNC_DAYS.length },
+    (_, i) => nextSyncDays(new Date(start + i * TEN_MIN), TEN_MIN)[0],
+  );
+
+  assert.strictEqual(
+    new Set(picks).size,
+    SYNC_DAYS.length,
+    `consecutive ticks must not repeat a day, got: ${picks.join(", ")}`,
+  );
+  for (let i = 1; i < picks.length; i++) {
+    const prev = SYNC_DAYS.indexOf(picks[i - 1] as (typeof SYNC_DAYS)[number]);
+    const next = SYNC_DAYS.indexOf(picks[i] as (typeof SYNC_DAYS)[number]);
+    assert.strictEqual(next, (prev + 1) % SYNC_DAYS.length, "rotation must step forward one day per tick");
+  }
+});
+
+test("every declared cron pattern has a cadence mapping", () => {
+  for (const pattern of cron) {
+    assert.ok(CADENCE_MS[pattern], `cron pattern ${pattern} has no CADENCE_MS entry`);
   }
 });
 

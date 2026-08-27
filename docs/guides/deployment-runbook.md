@@ -145,15 +145,19 @@ pnpm run make-admin <username>
 
 ## 8. Workers Paid Plan & Resource Limits
 
-The Free plan's 50-subrequest-per-invocation ceiling is too low for a full schedule sync (~900 events across 7 con days, each needing its own detail-page fetch). The Worker runs on the **Workers Paid plan** ($5/mo base) for Dragon Con 2026 con-week traffic, with explicit resource ceilings in `wrangler.jsonc` [^wrangler-config] so a bug or an oversized manual run can't run away:
+The Free plan's 50-subrequest-per-invocation ceiling is far below what any con-day sync consumes, so the Worker runs on the **Workers Paid plan** ($5/mo base) for Dragon Con 2026 con-week traffic. `wrangler.jsonc` pins explicit resource ceilings [^wrangler-config] as a deliberate spend guard — they sit **below** the Paid defaults, not at them:
 
 ```jsonc
 "limits": {
-  "cpu_ms": 10000,     // 10s ceiling per invocation (Paid default is 30s)
-  "subrequests": 2000  // one con day per cron tick; a full manual multi-day sync also fits. Paid default is 10,000
+  "cpu_ms": 10000,     // self-imposed; cron handlers are documented up to 15 min
+  "subrequests": 2000  // self-imposed; Paid default is 10,000 (configurable to 10M)
 }
 ```
 
+Do not reason about sync sizing from this block alone: subrequests are only one of four per-invocation ceilings (CPU, D1 queries, subrequests, detail-fetch budget). Which one binds and why — including the production measurement behind it — lives in [`rules/ingestion-budget.md`](/docs/rules/ingestion-budget.md); platform constants and feature verdicts live in [`rules/cloudflare-platform-limits.md`](/docs/rules/cloudflare-platform-limits.md).
+
+One operational trap these limits cannot catch: **Cloudflare does not prevent overlapping cron runs** when execution outlasts its interval. Waves keep a full day near ~1.6 minutes against a 10-minute cadence, so overlap is unlikely but unguarded.
+
 1. **Upgrade the account:** Cloudflare dashboard (dash.cloudflare.com) → **Workers & Pages** → **Plans** (self-serve "Activate"/"Upgrade" prompt on the Free plan) → subscribe to **Workers Paid** with a payment method on file. This is an account-level, self-serve change; it cannot be done via Wrangler or the API.
 2. **Set a budget alert (informational only):** **Billing** → **Billable Usage** → **Create budget alert**. Cloudflare has no hard spend cap on Workers usage — a budget alert only emails a warning past a chosen threshold, it does not pause or block the Worker.
-3. **Downgrade after the con:** Switch back to the Workers Free plan once Dragon Con 2026 con-week traffic ends (after Sep 7) to stop the recurring $5/mo charge. `runIngestion()` (`lib/ingest.ts`) already self-throttles to `DEFAULT_DETAIL_FETCH_BUDGET` event-detail fetches per invocation regardless of plan, so downgrading needs no code change.
+3. **Downgrade after the con:** Switch back to the Workers Free plan once Dragon Con 2026 con-week traffic ends (after Sep 7) to stop the recurring $5/mo charge. `runIngestion()` (`lib/ingest.ts`) already self-throttles to `DEFAULT_DETAIL_FETCH_BUDGET` event-detail fetches per invocation regardless of plan, so downgrading needs no code change. It is also safe because nothing ingests afterward: `isWithinActiveWindow` (`crons/sync-schedule.ts`) gates every scheduled run to Aug 24 – Sep 7 2026, and its 50-subrequest ceiling would not survive even one con day on the Free plan.
