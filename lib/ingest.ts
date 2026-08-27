@@ -150,10 +150,24 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     deletedEvents: [],
   };
 
-  const daysToFetch =
+  // Upstream's view_by_day endpoint only accepts date params of the form
+  // `Sep++N` (double space, URL-encoded). Map human weekday labels — e.g.
+  // the admin dashboard's filter chips — onto that contract; canonical
+  // params and synthetic test days pass through untouched.
+  const WEEKDAY_TO_DAY_PARAM: Record<string, string> = {
+    Wednesday: "Sep++2",
+    Thursday: "Sep++3",
+    Friday: "Sep++4",
+    Saturday: "Sep++5",
+    Sunday: "Sep++6",
+    Monday: "Sep++7",
+    Tuesday: "Sep++8",
+  };
+  const daysToFetch = (
     options.days && options.days.length > 0
       ? options.days
-      : ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"];
+      : ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"]
+  ).map((day) => WEEKDAY_TO_DAY_PARAM[day] ?? day);
 
   // Shared across every day below (not reset per day) so a multi-day sync
   // can never exceed the invocation's subrequest budget.

@@ -976,3 +976,23 @@ test("full-day ingestion of 120 fresh events keeps D1 statement count low", asyn
     sharedFakeD1.prepare = originalPrepare;
   }
 });
+
+test("weekday day labels from the admin dashboard are normalized to upstream Sep++N params", async () => {
+  const routes = new Map<string, string>();
+  // The listing route only exists under the canonical upstream param; if the
+  // alias were posted verbatim ("Saturday"), the fetch would miss and the
+  // run would report a failed day.
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=Sep++5`,
+    dayListingHtml("Saturday, Sep  5", [{ id: "eeee4001", title: "Alias Panel", timeStr: "Time A" }]),
+  );
+  routes.set(`${BASE_URL}/event/eeee4001`, detailHtml({ location: "Loc A", description: "Desc A" }));
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", days: ["Saturday"] })),
+  );
+
+  assert.strictEqual(result.errors, 0);
+  assert.strictEqual(result.totalScraped, 1);
+  assert.strictEqual(result.created, 1);
+});
