@@ -52,3 +52,4 @@ last_verified: 2026-08-26
 | [`tests/admin-api.test.ts`](/tests/admin-api.test.ts) | Unit Test Suite (Admin Ingestion & Stats Routes) | CyberDragon Engineering |
 | [`tests/admin-ui.test.ts`](/tests/admin-ui.test.ts) | Unit Test Suite (Admin Dashboard SSR & Head Loader) | CyberDragon Engineering |
 | [`tests/crons.test.ts`](/tests/crons.test.ts) | Unit Test Suite (Automated Cron Job & Schedule Ingestion) | CyberDragon Engineering |
+| [`tests/event-ordering.test.ts`](/tests/event-ordering.test.ts) | Unit Test Suite (Chronological Event & Time Rail Slot Ordering) | CyberDragon Engineering |

@@ -3,7 +3,7 @@ type: API Contracts
 title: CyberDragon Hono API Contracts
 description: Request and response schemas for all file-based Hono endpoints on Cloudflare Workers.
 tags: [api-contracts, interfaces, hono, endpoints]
-generated: { by: human:martinrojas, at: 2026-08-26 }
+generated: { by: docsmith/1.3.0, at: 2026-08-27 }
 verified: [{ by: docsmith/1.3.0, at: 2026-08-26 }]
 status: stable
 maintainer: CyberDragon Engineering
@@ -68,6 +68,7 @@ sources:
 
 Query and filter convention schedule events [^events-route].
 
+- **Ordering:** Results are ordered chronologically by `startsAt ASC, title ASC`.
 - **Method:** `GET`
 - **Query Parameters:**
   - `id` (optional, string): Fetch single event by UUID.

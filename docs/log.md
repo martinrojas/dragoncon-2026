@@ -3,6 +3,22 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-27 — Chronological Event Ordering & Time Rail Slot Sorting
+
+- **Type:** Bugfix (display correctness — schedule panels rendered in random time sequence).
+- **Symptom:** Viewing Friday on `https://dragoncon.martinrojas.dev/` rendered panels out of chronological order (e.g. 4 PM, then 8 PM, 10 PM, 12 AM, 8 AM, 1 PM).
+- **Root Cause:**
+  - `routes/api/events.ts` and `pages/index.server.ts` selected rows from D1 without an `ORDER BY` clause, returning events in arbitrary insertion/scrape order.
+  - `filteredEvents` in `pages/index.tsx` filtered without sorting by `startsAt`.
+  - `groupedSlots` constructed `TimeRail` buckets in iteration order, scattering time slots chronologically.
+- **Changes:**
+  - `routes/api/events.ts` & `pages/index.server.ts`: Added `.orderBy(asc(events.startsAt), asc(events.title))`.
+  - `pages/index.tsx`: Added ascending `startsAt` sort (with `title` tiebreaker) to `filteredEvents`.
+  - `lib/walktime.ts`: Exported `parseTimeDisplay` for reusable testing and SSR import.
+  - `public/sw.js`: Bumped `CACHE_NAME` to `dragoncon-pwa-v12` per PWA cache versioning policy.
+  - `tests/event-ordering.test.ts`: Added unit tests verifying 12 AM → 11:30 PM ordering across full 24h days and time rail slot generation.
+
+---
 ## 2026-08-27 — ET Timestamps, Past-Day Skip Polish, PR #6
 
 - **Type:** Bug fix + capture pass.
