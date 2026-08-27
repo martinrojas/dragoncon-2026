@@ -899,6 +899,9 @@ export default function HomePage({
   // Filter events according to smart checkboxes and segmented control
   const filteredEvents = useMemo(() => {
     return eventsList.filter((item) => {
+      if (selectedDay && item.day !== selectedDay) {
+        return false;
+      }
       if (scheduleViewFilter === "Saved" && !userEventStatusMap[item.id]) {
         return false;
       }
@@ -914,7 +917,7 @@ export default function HomePage({
       }
       return true;
     });
-  }, [eventsList, scheduleViewFilter, userEventStatusMap, hideEndedPanels, hideConflicts, walkabilityOnly, homeVenue]);
+  }, [eventsList, selectedDay, scheduleViewFilter, userEventStatusMap, hideEndedPanels, hideConflicts, walkabilityOnly, homeVenue]);
 
   // Group events by time slots for TimeRail layout
   const groupedSlots = useMemo(() => {
