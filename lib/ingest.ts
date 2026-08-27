@@ -29,6 +29,8 @@ export interface IngestOptions {
   maxDetailFetches?: number;
   mode?: "sync" | "dry-run" | "hard-resync";
   onProgress?: (msg: string) => void;
+  /** Injectable clock for the past-day filter; defaults to the real time. */
+  now?: Date;
 }
 
 export interface IngestDiffSummary {
@@ -162,10 +164,52 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     Monday: "Sep++7",
     Tuesday: "Sep++8",
   };
-  const daysToFetch = (
-    options.days && options.days.length > 0
-      ? options.days
-      : ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"]
+
+  // Upstream days live in the September 2026 con window. Filter *default*
+  // expansions down to today-or-later ET so passed days stop costing
+  // budget. Explicit `days:` lists always win -- operators may deliberately
+  // re-pull a past day (e.g. hard-resync archaeology).
+  function conDateInET(now: Date): { month: number; day: number } {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        month: "numeric",
+        day: "numeric",
+      }).formatToParts(now);
+      const pick = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? NaN);
+      return { month: pick("month"), day: pick("day") };
+    } catch {
+      return { month: now.getUTCMonth() + 1, day: now.getUTCDate() };
+    }
+  }
+
+  function isFutureConDayParam(dayParam: string, now: Date): boolean {
+    const match = /^Sep\+\+(\d)$/.exec(dayParam);
+    if (!match) return true; // unknown/synthetic params are never auto-skipped
+    const { month, day } = conDateInET(now);
+    if (month < 9) return true; // before September: entire con still ahead
+    if (month > 9) return false; // after September: con finished
+    return Number(match[1]) >= day; // today itself stays live until midnight ET
+  }
+
+  const hasExplicitDays = Boolean(options.days && options.days.length > 0);
+  const clock = options.now ?? new Date();
+  if (!hasExplicitDays && mode !== "hard-resync") {
+    const skippedPastDays = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"].filter(
+      (d) => !isFutureConDayParam(d, clock),
+    );
+    if (skippedPastDays.length > 0) {
+      log(`Skipping already-passed con day(s): ${skippedPastDays.join(", ")}`);
+    }
+  }
+  const allConDayParams = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"];
+  const resolvedDefaults =
+    mode === "hard-resync"
+      ? allConDayParams // hard-resync means exactly that -- re-pull everything
+      : allConDayParams.filter((d) => isFutureConDayParam(d, clock));
+  const daysToFetch = (options.days && options.days.length > 0
+    ? options.days
+    : resolvedDefaults
   ).map((day) => WEEKDAY_TO_DAY_PARAM[day] ?? day);
 
   // Shared across every day below (not reset per day) so a multi-day sync

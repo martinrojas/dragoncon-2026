@@ -1062,3 +1062,46 @@ test("smaller days complete first so late days can never starve the budget", asy
   assert.ok(result.log.some((l) => l.includes("budget exhausted inside BigLateDay")));
   assert.ok(result.log.some((l) => l.includes("Processing order (smallest-first): SmallEarlyDay(2), BigLateDay(6)")));
 });
+
+test("default day expansion skips already-passed con days but keeps today and the future", async () => {
+  // Saturday, Sep 5, 2026 mid-afternoon ET: Wed-Fri are history.
+  const saturdayNoon = new Date("2026-09-05T18:00:00Z");
+  const routes = new Map<string, string>();
+  const liveDays = ["Sep++5", "Sep++6", "Sep++7", "Sep++8"];
+  routes.set(`${BASE_URL}/events/view_by_day?day=Sep++6`, dayListingHtml("Sunday, Sep  6", []));
+  for (const d of liveDays) {
+    if (!routes.has(`${BASE_URL}/events/view_by_day?day=${d}`)) {
+      routes.set(
+        `${BASE_URL}/events/view_by_day?day=${d}`,
+        dayListingHtml(`Rotation ${d}`, []),
+      );
+    }
+  }
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", now: saturdayNoon })),
+  );
+
+  assert.strictEqual(result.errors, 0);
+  assert.ok(result.log.some((l) => l.includes("Skipping already-passed con day(s): Sep++2, Sep++3, Sep++4")));
+  assert.ok(!result.log.some((l) => l.includes("Fetching day listing: Sep++2...")));
+  assert.ok(result.log.some((l) => l.includes("Found 0 events for day Rotation Sep++7")));
+});
+
+test("explicitly requested past days bypass the skip filter", async () => {
+  const saturdayNoon = new Date("2026-09-05T18:00:00Z");
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=Sep++3`,
+    dayListingHtml("Thursday, Sep  3", []),
+  );
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () =>
+      runIngestion({ mode: "sync", days: ["Sep++3"], now: saturdayNoon }),
+    ),
+  );
+
+  assert.strictEqual(result.errors, 0);
+  assert.ok(result.log.some((l) => l.includes("Fetching day listing: Sep++3...")));
+});

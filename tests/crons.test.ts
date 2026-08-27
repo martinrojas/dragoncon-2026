@@ -292,3 +292,16 @@ test("nextSyncDays rotates through every con day deterministically", () => {
     assert.ok(picks.includes(day), `${day} should be covered each cycle`);
   }
 });
+
+test("nextSyncDays never returns a con day that has already passed", () => {
+  // Sep 6, 2026 18:00Z == 2pm ET Sunday: Wed(2)-Sat(5) are behind ET.
+  const PAST_BY_SUNDAY: Record<string, true> = { "Sep++2": true, "Sep++3": true, "Sep++4": true, "Sep++5": true };
+  for (let hour = 0; hour < 24; hour += 4) {
+    const pick = nextSyncDays(new Date(Date.UTC(2026, 8, 6, hour)))[0];
+    assert.ok(pick && !(pick in PAST_BY_SUNDAY), `tick ${hour}Z returned stale day ${pick}`);
+  }
+});
+
+test("nextSyncDays returns empty once the con window has fully passed", () => {
+  assert.deepStrictEqual(nextSyncDays(new Date("2026-09-20T18:00:00Z")), []);
+});
