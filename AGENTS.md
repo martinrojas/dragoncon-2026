@@ -42,6 +42,7 @@ For full architecture details: `docs/SYSTEM_DESIGN.md`.
 - **Database:** Define tables in `db/schema.ts` using `void/schema-d1` and `void/db`. Never write raw migration SQL by hand; use `pnpm run db:generate`.
 - **Styling:** Use CyberDragon Glass design tokens in `public/cyberdragon.css` (Space Grotesk `var(--font-core)`, JetBrains Mono `var(--font-mono)`, `--canvas`, `--surface-glass-strong`, `--purple-600`, `--gold-500`, `--coral-500`).
 - **Client prefs:** Restore `localStorage` settings in the mount effect, not a `useState` initializer (SSR renders server-side); arm the persist effect only after restore (`dc_selected_day` pattern in `pages/index.tsx`).
+- **D1 statements:** A statement may bind at most 100 parameters (per statement, even inside `batch()`). Multi-row INSERTs bind per column per row — check `columns × rows` before raising any chunk size (`ROW_CHUNK`/`ID_CHUNK` in `lib/ingest.ts`).
 - **Timestamps:** Render admin times via `formatRunTimestamp` (`pages/admin.tsx`) — SQLite `datetime('now')` is suffix-less UTC and bare `new Date(...).toLocaleString()` misparses it as viewer-local.
 - **Commits:** Follow conventional commit messages (`feat:`, `fix:`, `chore:`, `docs:`, `test:`).
 

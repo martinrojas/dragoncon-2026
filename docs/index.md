@@ -22,6 +22,7 @@ last_verified: 2026-08-26
 | [`guides/deployment-runbook.md`](/docs/guides/deployment-runbook.md) | `Guide` | Step-by-step runbook for provisioning, migrating, and deploying the CyberDragon app on Cloudflare Workers and D1. |
 | [`rules/ingestion-budget.md`](/docs/rules/ingestion-budget.md) | `Domain Rules` | Invariants for the shared ingestion detail budget, smallest-first day ordering, ET past-day skipping, and batched D1 writes. |
 | [`interfaces/upstream-schedule-api.md`](/docs/interfaces/upstream-schedule-api.md) | `API Contracts` | Param contract and observed behavior of the upstream `app.core-apps.com/dragoncon26` schedule source. |
+| [`rules/cloudflare-platform-limits.md`](/docs/rules/cloudflare-platform-limits.md) | `Domain Rules` | Documented Workers/D1/Cron limits, which platform features do and do not fit the ingestion workload, and the production CPU measurement practice. |
 
 ---
 
