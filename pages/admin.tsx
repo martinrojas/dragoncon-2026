@@ -44,6 +44,23 @@ export interface FeedbackItem {
   createdAt: string;
 }
 
+export const FEEDBACK_ACTIONS: Record<string, Array<{ label: string; next: string }>> = {
+  new: [
+    { label: "Start", next: "in_progress" },
+    { label: "Complete", next: "done" },
+    { label: "Archive", next: "archived" },
+  ],
+  in_progress: [
+    { label: "Complete", next: "done" },
+    { label: "Archive", next: "archived" },
+  ],
+  done: [
+    { label: "Reopen", next: "new" },
+    { label: "Archive", next: "archived" },
+  ],
+  archived: [{ label: "Reopen", next: "new" }],
+};
+
 export interface IngestResult {
   runId?: number;
   mode: string;
@@ -114,6 +131,8 @@ export default function AdminPage(props: Props) {
   });
 
   const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
+  const [feedbackFilter, setFeedbackFilter] = useState<"new" | "all">("new");
+  const [feedbackBusyId, setFeedbackBusyId] = useState<string | null>(null);
   const [selectedRunForLogModal, setSelectedRunForLogModal] = useState<IngestionRun | null>(null);
 
   // Load auth state from localStorage on mount
@@ -245,6 +264,32 @@ export default function AdminPage(props: Props) {
       console.error("Failed to refresh admin dashboard data", err);
     }
   };
+
+  // Apply a triage transition to a feedback item
+  const updateFeedbackStatus = async (id: string, status: string) => {
+    if (!token) return;
+    setFeedbackBusyId(id);
+    try {
+      const res = await fetch(`/api/feedback/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; feedback?: FeedbackItem };
+      if (data.success && data.feedback) {
+        const updated = data.feedback;
+        setFeedbackItems((items) => items.map((it) => (it.id === id ? updated : it)));
+      }
+    } catch (err) {
+      console.error("Failed to update feedback status", err);
+    } finally {
+      setFeedbackBusyId(null);
+    }
+  };
+
+  // Items shown in the attendee feedback panel based on triage filter
+  const visibleFeedback =
+    feedbackFilter === "all" ? feedbackItems : feedbackItems.filter((item) => item.status === "new");
 
   // Trigger sync execution
   const executeSync = async () => {
@@ -1038,23 +1083,45 @@ export default function AdminPage(props: Props) {
             <h4 style={{ font: "var(--type-subhead)", color: "var(--gold-400)", fontSize: 14 }}>
               💬 ATTENDEE FEEDBACK
             </h4>
-            <button
-              type="button"
-              onClick={() => refreshDashboardData(token)}
-              className="cd-btn cd-btn-ghost"
-              style={{ padding: "4px 8px", fontSize: 11 }}
-            >
-              Refresh Table
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {(["new", "all"] as const).map((filterMode) => {
+                const active = feedbackFilter === filterMode;
+                return (
+                  <button
+                    key={filterMode}
+                    type="button"
+                    onClick={() => setFeedbackFilter(filterMode)}
+                    className="cd-btn"
+                    style={{
+                      padding: "4px 8px",
+                      fontSize: 11,
+                      background: active ? "rgba(255, 193, 7, 0.15)" : "transparent",
+                      color: active ? "var(--gold-400)" : "var(--text-secondary)",
+                      border: `1px solid ${active ? "rgba(255, 193, 7, 0.3)" : "rgba(255, 255, 255, 0.12)"}`,
+                    }}
+                  >
+                    {filterMode === "new" ? "New Only" : "Show All"}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => refreshDashboardData(token)}
+                className="cd-btn cd-btn-ghost"
+                style={{ padding: "4px 8px", fontSize: 11 }}
+              >
+                Refresh Table
+              </button>
+            </div>
           </div>
 
-          {feedbackItems.length === 0 ? (
+          {feedbackItems.length === 0 || visibleFeedback.length === 0 ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-tertiary)", fontSize: 12 }}>
-              No feedback submitted yet.
+              {feedbackItems.length === 0 ? "No feedback submitted yet." : "No new feedback — switch to Show All."}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {feedbackItems.map((item) => {
+              {visibleFeedback.map((item) => {
                 const isBug = item.kind === "bug";
                 return (
                   <div
@@ -1063,6 +1130,7 @@ export default function AdminPage(props: Props) {
                       padding: 12,
                       background: "rgba(255, 255, 255, 0.03)",
                       borderRadius: "var(--r-2)",
+                      opacity: item.status === "new" ? 1 : 0.55,
                       border: "1px solid rgba(255, 255, 255, 0.06)",
                     }}
                   >
@@ -1094,6 +1162,28 @@ export default function AdminPage(props: Props) {
                             AUTO-REPORT
                           </span>
                         )}
+                        {item.status !== "new" && (
+                          <span
+                            className="cd-badge"
+                            style={{
+                              background:
+                                item.status === "archived" ? "rgba(255, 255, 255, 0.08)" : "rgba(168, 85, 247, 0.15)",
+                              color:
+                                item.status === "archived"
+                                  ? "var(--text-tertiary)"
+                                  : item.status === "done"
+                                    ? "#4ade80"
+                                    : "var(--purple-300)",
+                              border: `1px solid ${
+                                item.status === "archived" ? "rgba(255, 255, 255, 0.15)" : "rgba(168, 85, 247, 0.3)"
+                              }`,
+                              fontSize: 10,
+                              padding: "2px 6px",
+                            }}
+                          >
+                            {item.status === "in_progress" ? "IN PROGRESS" : item.status.toUpperCase()}
+                          </span>
+                        )}
                         <span style={{ fontSize: 12, color: "var(--purple-300)", fontWeight: 500 }}>
                           @{item.username ?? "anonymous"}
                         </span>
@@ -1118,6 +1208,20 @@ export default function AdminPage(props: Props) {
                         {item.contact}
                       </div>
                     )}
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 8 }}>
+                      {(FEEDBACK_ACTIONS[item.status] ?? []).map((action) => (
+                        <button
+                          key={action.next}
+                          type="button"
+                          disabled={feedbackBusyId === item.id}
+                          onClick={() => updateFeedbackStatus(item.id, action.next)}
+                          className="cd-btn cd-btn-ghost"
+                          style={{ padding: "3px 8px", fontSize: 10 }}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 );
               })}

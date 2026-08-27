@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { Context } from "hono";
 import { withRuntimeEnv } from "void/_env";
 import { POST as feedbackPOST, GET as feedbackGET } from "../routes/api/feedback.ts";
+import { PATCH as feedbackPATCH } from "../routes/api/feedback/[id].ts";
 
 function createFakeD1() {
   const sqliteDb = new DatabaseSync(":memory:");
@@ -97,6 +98,13 @@ insertUser(adminUserId, "admin_fb", "admin");
 insertUser(regularUserId, "reg_fb", "user");
 
 const adminToken = makeToken({ id: adminUserId, username: "admin_fb", name: "admin_fb", role: "admin" });
+
+function insertFeedback(id: string, status = "new") {
+  sharedFakeD1
+    .prepare("INSERT INTO feedback (id, kind, message, status) VALUES (?, ?, ?, ?)")
+    .bind(id, "bug", "Test feedback message", status)
+    .run();
+}
 const userToken = makeToken({ id: regularUserId, username: "reg_fb", name: "reg_fb", role: "user" });
 
 test("POST /api/feedback successfully inserts a bug report with user-agent", async () => {
@@ -235,5 +243,103 @@ test("GET /api/feedback returns list of feedback for authenticated admin", async
     assert.equal(data.success, true);
     assert.ok(Array.isArray(data.feedback));
     assert.ok(data.feedback.length >= 2);
+  });
+});
+
+test("PATCH /api/feedback/:id returns 401 when unauthenticated", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    const ctx = createContext({ params: { id: "fb_x" }, body: { status: "done" } });
+    const res = (await feedbackPATCH(ctx)) as Response;
+    assert.equal(res.status, 401);
+  });
+});
+
+test("PATCH /api/feedback/:id returns 403 for an authenticated non-admin user", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    const ctx = createContext({
+      authHeader: `Bearer ${userToken}`,
+      params: { id: "fb_x" },
+      body: { status: "done" },
+    });
+    const res = (await feedbackPATCH(ctx)) as Response;
+    assert.equal(res.status, 403);
+  });
+});
+
+test("PATCH /api/feedback/:id rejects invalid status with 400", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    const ctx = createContext({
+      authHeader: `Bearer ${adminToken}`,
+      params: { id: "fb_x" },
+      body: { status: "completed" },
+    });
+    const res = (await feedbackPATCH(ctx)) as Response;
+    assert.equal(res.status, 400);
+  });
+});
+
+test("PATCH /api/feedback/:id rejects missing status with 400", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    const ctx = createContext({
+      authHeader: `Bearer ${adminToken}`,
+      params: { id: "fb_x" },
+      body: {},
+    });
+    const res = (await feedbackPATCH(ctx)) as Response;
+    assert.equal(res.status, 400);
+  });
+});
+
+test("PATCH /api/feedback/:id returns 404 for unknown feedback id", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    insertFeedback("fb_known");
+    const ctx = createContext({
+      authHeader: `Bearer ${adminToken}`,
+      params: { id: "fb_unknown" },
+      body: { status: "done" },
+    });
+    const res = (await feedbackPATCH(ctx)) as Response;
+    assert.equal(res.status, 404);
+  });
+});
+
+test("PATCH /api/feedback/:id transitions new to done and GET reflects it", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    insertFeedback("fb_done");
+    const patchCtx = createContext({
+      authHeader: `Bearer ${adminToken}`,
+      params: { id: "fb_done" },
+      body: { status: "done" },
+    });
+    const res = (await feedbackPATCH(patchCtx)) as Response;
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as { success: boolean; feedback: { id: string; status: string } };
+    assert.equal(data.success, true);
+    assert.equal(data.feedback.id, "fb_done");
+    assert.equal(data.feedback.status, "done");
+
+    const getCtx = createContext({ authHeader: `Bearer ${adminToken}` });
+    const getRes = (await feedbackGET(getCtx)) as Response;
+    const getData = (await getRes.json()) as { feedback: Array<{ id: string; status: string }> };
+    const row = getData.feedback.find((f) => f.id === "fb_done");
+    assert.ok(row);
+    assert.equal(row.status, "done");
+  });
+});
+
+test("PATCH /api/feedback/:id supports every lifecycle transition including reopen", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    insertFeedback("fb_cycle", "archived");
+    for (const status of ["new", "in_progress", "done", "archived"]) {
+      const ctx = createContext({
+        authHeader: `Bearer ${adminToken}`,
+        params: { id: "fb_cycle" },
+        body: { status },
+      });
+      const res = (await feedbackPATCH(ctx)) as Response;
+      assert.equal(res.status, 200);
+      const data = (await res.json()) as { feedback: { status: string } };
+      assert.equal(data.feedback.status, status);
+    }
   });
 });
