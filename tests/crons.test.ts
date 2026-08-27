@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { withRuntimeEnv } from "void/_env";
-import { computeContentHash } from "../lib/ingest.ts";
+import { computeContentHash, runIngestionWithRunLog } from "../lib/ingest.ts";
 import cronHandler, { cron, isWithinActiveWindow } from "../crons/sync-schedule.ts";
 
 interface FakeD1BoundStatement {
@@ -46,17 +46,15 @@ function createFakeD1(): FakeD1Binding {
     );
     CREATE TABLE ingestion_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      started_at TEXT NOT NULL,
-      finished_at TEXT NOT NULL,
+      user_id TEXT NOT NULL,
       mode TEXT NOT NULL,
-      total_scraped INTEGER NOT NULL,
-      created_count INTEGER NOT NULL,
-      updated_count INTEGER NOT NULL,
-      deleted_count INTEGER NOT NULL,
-      error_count INTEGER NOT NULL,
-      diff_summary TEXT NOT NULL,
-      log_text TEXT NOT NULL,
-      success INTEGER NOT NULL
+      status TEXT NOT NULL,
+      days TEXT,
+      stats TEXT,
+      log TEXT,
+      error_message TEXT,
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
     );
   `);
 
@@ -216,9 +214,8 @@ test("cron handler executes runIngestion when within active window", async () =>
     });
 
     assert.ok(logOutput.includes("Starting scheduled sync at 2026-09-03T14:00:00.000Z"));
-    assert.ok(logOutput.includes("Ingestion finished in"));
+    assert.ok(logOutput.includes("Run #1 finished in"));
     assert.ok(logOutput.includes("Created: 1"));
-
     // Verify DB contains ingested event
     const eventRow = sharedFakeD1
       .prepare("SELECT * FROM events WHERE id = ?")
@@ -238,9 +235,39 @@ test("cron handler executes runIngestion when within active window", async () =>
       "Learn Cloudflare cron triggers in Void.",
     );
     assert.strictEqual(eventRow?.content_hash, expectedHash);
+
+    // Regression: cron executions must be recorded in run history (bug: only
+    // the admin HTTP route created ingestion_runs rows, cron ran silently).
+    const runRows = sharedFakeD1
+      .prepare("SELECT user_id, mode, status, stats FROM ingestion_runs")
+      .bind().all().results as Array<Record<string, unknown>>;
+    assert.strictEqual(runRows.length, 1, "Cron execution should be recorded in ingestion_runs history");
+    assert.strictEqual(runRows[0].user_id, "cron");
+    assert.strictEqual(runRows[0].mode, "sync");
+    assert.strictEqual(runRows[0].status, "completed");
+    assert.ok(String(runRows[0].stats).includes('"created":1'));
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
     console.error = originalError;
   }
+});
+
+test("runIngestionWithRunLog marks the run failed when ingestion throws", async () => {
+  await withRuntimeEnv({ DB: sharedFakeD1 }, async () => {
+    await assert.rejects(
+      runIngestionWithRunLog({
+        onProgress: () => {
+          throw new Error("boom");
+        },
+      }),
+      /boom/,
+    );
+
+    const failedRows = sharedFakeD1
+      .prepare("SELECT status, error_message FROM ingestion_runs WHERE status = 'failed'")
+      .bind().all().results as Array<Record<string, unknown>>;
+    assert.strictEqual(failedRows.length, 1, "Failed ingestion should be recorded exactly once");
+    assert.strictEqual(failedRows[0].error_message, "boom");
+  });
 });

@@ -1,5 +1,5 @@
 import { defineScheduled } from "void";
-import { runIngestion } from "../lib/ingest.ts";
+import { runIngestionWithRunLog } from "../lib/ingest.ts";
 
 export const cron = [
   "0 */4 * 8 *", // Aug 24-31: every 4 hours
@@ -32,13 +32,11 @@ export default defineScheduled(async (controller, _env, _ctx) => {
   console.log(`[Cron:sync-schedule] Starting scheduled sync at ${now.toISOString()} (cron: ${controller.cron})`);
 
   try {
-    const result = await runIngestion({
-      mode: "sync",
-    });
+    const result = await runIngestionWithRunLog({ mode: "sync" });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(
-      `[Cron:sync-schedule] Ingestion finished in ${duration}s. Scraped: ${result.totalScraped}, Created: ${result.created}, Updated: ${result.updated}, Deleted: ${result.deleted}, Errors: ${result.errors}`,
+      `[Cron:sync-schedule] Run #${result.runId} finished in ${duration}s. Scraped: ${result.totalScraped}, Created: ${result.created}, Updated: ${result.updated}, Deleted: ${result.deleted}, Errors: ${result.errors}`,
     );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

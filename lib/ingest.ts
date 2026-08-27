@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import { and, db, eq } from "void/db";
-import { eventChanges, events } from "../db/schema.ts";
+import { eventChanges, events, ingestionRuns } from "../db/schema.ts";
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
@@ -506,4 +506,60 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     diffSummary,
     log: logs,
   };
+}
+
+export interface RunLoggedIngestResult extends IngestResult {
+  runId: number;
+}
+
+/**
+ * Runs an ingestion and records its lifecycle in the `ingestion_runs` history
+ * (running -> completed | failed). Every entry point (admin route, legacy
+ * route, cron) must call this instead of `runIngestion` so scheduled and
+ * legacy executions appear in the admin run history. `userId` attributes the
+ * run; scheduled cron runs use the `"cron"` sentinel.
+ */
+export async function runIngestionWithRunLog(
+  options: IngestOptions & { userId?: string | null } = {},
+): Promise<RunLoggedIngestResult> {
+  const [run] = await db
+    .insert(ingestionRuns)
+    .values({
+      userId: options.userId ?? "cron",
+      mode: options.mode ?? "sync",
+      status: "running",
+      days: options.days ? JSON.stringify(options.days) : null,
+    })
+    .returning();
+
+  try {
+    const result = await runIngestion(options);
+    await db
+      .update(ingestionRuns)
+      .set({
+        status: "completed",
+        stats: JSON.stringify({
+          totalScraped: result.totalScraped,
+          created: result.created,
+          updated: result.updated,
+          deleted: result.deleted,
+          errors: result.errors,
+        }),
+        log: result.log.join("\n"),
+        completedAt: new Date().toISOString(),
+      })
+      .where(eq(ingestionRuns.id, run.id));
+    return { ...result, runId: run.id };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await db
+        .update(ingestionRuns)
+        .set({ status: "failed", errorMessage: message, completedAt: new Date().toISOString() })
+        .where(eq(ingestionRuns.id, run.id));
+    } catch {
+      // Swallow so the original ingestion error propagates below.
+    }
+    throw error;
+  }
 }

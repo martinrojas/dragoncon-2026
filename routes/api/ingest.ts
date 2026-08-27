@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { defineHandler } from "void";
 import { adminGuard } from "../../lib/auth.ts";
-import { runIngestion } from "../../lib/ingest.ts";
+import { runIngestionWithRunLog } from "../../lib/ingest.ts";
 
 export const POST = defineHandler(async (c: Context) => {
   const guard = await adminGuard(c);
@@ -15,9 +15,10 @@ export const POST = defineHandler(async (c: Context) => {
       maxDetailFetches?: number;
     };
 
-    const result = await runIngestion({
+    const result = await runIngestionWithRunLog({
       days: body.days,
       maxDetailFetches: body.maxDetailFetches,
+      userId: guard.user.id,
     });
 
     return c.json({ success: true, result });
