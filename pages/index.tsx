@@ -5,7 +5,7 @@ import {
   type PublicKeyCredentialCreationOptionsJSON,
   type PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
-import { useEffect, useMemo, useState, type FormEvent, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from "react";
 import {
   AppBar,
   DayStrip,
@@ -203,6 +203,7 @@ export default function HomePage({
     }
     return "Sat";
   });
+  const dayRestoredRef = useRef(false);
   const [selectedTrack, setSelectedTrack] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const [showFilterSheet, setShowFilterSheet] = useState(false);
@@ -319,6 +320,9 @@ export default function HomePage({
 
     const savedTimeFormat = localStorage.getItem("dc_time_format");
     if (savedTimeFormat === "12h" || savedTimeFormat === "24h") setTimeFormat(savedTimeFormat);
+    const savedDay = localStorage.getItem("dc_selected_day");
+    if (savedDay && days?.includes(savedDay)) setSelectedDay(savedDay);
+    dayRestoredRef.current = true;
 
     const cleanupErrorCatchers = setupGlobalErrorCatchers(() => {
       const userStr = localStorage.getItem("dc_user");
@@ -361,6 +365,12 @@ export default function HomePage({
       .catch(console.error)
       .finally(() => setIsSearching(false));
   }, [searchQuery, selectedDay, selectedTrack, selectedLocation]);
+
+  // Persist selected day across reloads (armed after initial restore)
+  useEffect(() => {
+    if (!dayRestoredRef.current) return;
+    if (selectedDay) localStorage.setItem("dc_selected_day", selectedDay);
+  }, [selectedDay]);
 
   // Load User Agenda
   const loadUserAgenda = async (userId: string) => {
