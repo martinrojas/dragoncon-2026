@@ -2,7 +2,7 @@
 okf_version: "0.2"
 title: Documentation Map — CyberDragon Companion App
 description: Canonical knowledge index and source registration for Dragon Con 2026 Companion App.
-last_verified: 2026-08-24
+last_verified: 2026-08-26
 ---
 
 # Knowledge Index

@@ -3,8 +3,8 @@ type: API Contracts
 title: CyberDragon Hono API Contracts
 description: Request and response schemas for all file-based Hono endpoints on Cloudflare Workers.
 tags: [api-contracts, interfaces, hono, endpoints]
-generated: { by: docsmith/1.3.0, at: 2026-08-24T18:00:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-24T18:00:00Z }]
+generated: { by: human:martinrojas, at: 2026-08-26 }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-26 }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -21,20 +21,26 @@ sources:
     resource: routes/api/friends.ts:1-101
     title: Squad friendship and schedule overlap handler
   - id: auth-route
-    resource: routes/api/auth.ts:1-83
+    resource: routes/api/auth.ts:1-76
     title: Password authentication handler
   - id: passkey-route
-    resource: routes/api/auth/passkey.ts:1-227
+    resource: routes/api/auth/passkey.ts:1-222
     title: WebAuthn passkey registration and login ceremony handler
   - id: ics-route
     resource: routes/api/export-ics.ts:1-75
     title: RFC 5545 iCalendar export handler
   - id: ingest-route
-    resource: routes/api/ingest.ts:1-28
+    resource: routes/api/ingest.ts:1-29
     title: Schedule scraping ingestion handler
   - id: admin-ingest-route
     resource: routes/api/admin/ingest.ts:1-31
     title: Admin schedule ingestion execution handler
+  - id: legacy-ingest-route
+    resource: routes/api/ingest.ts:1-29
+    title: Legacy admin ingestion trigger (same engine, response without runId echo)
+  - id: hello-route
+    resource: routes/api/hello.ts:1-9
+    title: Void scaffold health check endpoint
   - id: admin-stats-route
     resource: routes/api/admin/stats.ts:1-52
     title: Admin database stats handler
@@ -43,12 +49,12 @@ sources:
     title: Admin historical ingestion runs query handler
   - id: feedback-route
     resource: routes/api/feedback.ts:1-69
-    title: Attendee feedback submission and admin review handler
+    title: Attendee feedback submission and admin retrieval endpoint
   - id: feedback-status-route
     resource: routes/api/feedback/[id].ts:1-40
     title: Admin feedback triage status transition handler
   - id: cron-sync-handler
-    resource: crons/sync-schedule.ts:1-47
+    resource: crons/sync-schedule.ts:1-45
     title: Scheduled cron trigger background handler
 ---
 
@@ -306,7 +312,21 @@ Allows attendees to submit bug reports or suggestions from the companion app, an
   ```
 ---
 
-## 10. Background Worker Cron Triggers
+## 8. Legacy & Misc Endpoints
+
+Compact registry for endpoints whose full schemas live in the SYSTEM_DESIGN API table (`docs/SYSTEM_DESIGN.md`, section 6) — added here so every route file has a registered home without duplicating schemas:
+
+| Method | Endpoint | Purpose | Notes |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth` | Password register / login | Returns `{ success, user, token }` [^auth-route] |
+| `GET` | `/api/changes` | Recent schedule diffs | `?limit=` (default 50) [^changes-route] |
+| `GET` / `POST` | `/api/friends` | Squad friends & shared schedule | See friends-route [^friends-route] |
+| `POST` | `/api/ingest` | Legacy admin ingestion trigger | Same engine as `/api/admin/ingest` via `runIngestionWithRunLog()`; run is recorded in history; returns `{ success, result }` where `result` includes `runId` [^legacy-ingest-route] |
+| `GET` | `/api/hello` | Void scaffold health check | Static JSON, no auth |
+
+---
+
+## 9. Background Worker Cron Triggers
 
 ### `ScheduledController` — `crons/sync-schedule.ts`
 
@@ -317,4 +337,4 @@ In addition to HTTP endpoints, the Cloudflare Worker executes background sync tr
   - `"0 */4 1-2 9 *"` (Every 4h Sept 1–2)
   - `"*/30 * 3-7 9 *"` (Every 30m during Dragon Con Sept 3–7)
 - **Payload / Context:** Invoked with `(controller: ScheduledController, env: CloudEnv['Bindings'], ctx: ExecutionContext)`.
-- **Behavior:** Checks `isWithinActiveWindow()`. If outside Aug 24 – Sep 7 2026, early-returns. Otherwise executes `runIngestion({ mode: "sync" })` directly against D1 SQLite without passing through HTTP auth guards.
+- **Behavior:** Checks `isWithinActiveWindow()`. If outside Aug 24 – Sep 7 2026, early-returns. Otherwise executes `runIngestionWithRunLog({ mode: "sync" })` — recording the run in `ingestion_runs` history (attributed `user_id: "cron"`) — without passing through HTTP auth guards.

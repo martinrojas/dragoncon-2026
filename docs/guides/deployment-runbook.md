@@ -70,7 +70,10 @@ To deploy local changes to production:
 # 1. Verify tests pass
 pnpm test
 
-# 2. Build and deploy
+# 2. If app code or assets changed, bump CACHE_NAME in public/sw.js
+#    (see AGENTS.md "PWA Cache Versioning") so installed clients refetch
+
+# 3. Build and deploy
 pnpm run deploy
 ```
 

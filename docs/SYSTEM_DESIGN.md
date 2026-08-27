@@ -3,8 +3,8 @@ type: System Design
 title: System Design — CyberDragon Companion App
 description: Architecture, subsystems, data model, APIs, and Cloudflare deployment for the Dragon Con 2026 Companion PWA.
 tags: [architecture, evergreen, pwa, cloudflare, react19]
-generated: { by: docsmith/1.3.0, at: 2026-08-24T18:00:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-24T18:00:00Z }]
+generated: { by: docsmith/1.3.0, at: 2026-08-26T00:00:00Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-26T00:00:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -24,10 +24,10 @@ sources:
     resource: package.json:1-39
     title: Real dependency versions and scripts
   - id: auth-guard-code
-    resource: lib/auth.ts:1-100
+    resource: lib/auth.ts:1-101
     title: Session parsing, role verification, and adminGuard middleware
   - id: admin-page-code
-    resource: pages/admin.tsx:1-1203
+    resource: pages/admin.tsx:1-1307
     title: Admin control center dashboard, ingestion controls, and run history UI
   - id: make-admin-code
     resource: scripts/make-admin.ts:1-169
@@ -35,14 +35,17 @@ sources:
   - id: feedback-code
     resource: routes/api/feedback.ts:1-69
     title: Attendee feedback submission and admin retrieval endpoint
+  - id: feedback-status-code
+    resource: routes/api/feedback/[id].ts:1-40
+    title: Admin feedback triage status transition endpoint
   - id: error-reporting-code
-    resource: lib/errorReporting.ts:1-190
+    resource: lib/errorReporting.ts:1-195
     title: Sanitized error reporting and automated bug dispatch
   - id: error-boundary-code
     resource: components/ErrorBoundary.tsx:1-289
     title: React error boundary and recovery interface
   - id: cron-sync-code
-    resource: crons/sync-schedule.ts:1-47
+    resource: crons/sync-schedule.ts:1-45
     title: Cloudflare Worker automated cron sync job and date window guards
 ---
 
@@ -112,7 +115,7 @@ flowchart TD
 - **Styling & PWA:** Custom CyberDragon Glass CSS (`public/cyberdragon.css`), Web App Manifest (`public/manifest.webmanifest`), Service Worker (`public/sw.js`).
 - **Head & Responsive Design:** Centralized document `<head>` management in `void.json` (`width=device-width, initial-scale=1, viewport-fit=cover`), `-webkit-text-size-adjust: 100%`, and hardware safe-area insets (`env(safe-area-inset-bottom)`, `env(safe-area-inset-top)`).
 - **API & Server:** Hono `4.11.9`, `@simplewebauthn/server` `13.3.2`, `@simplewebauthn/browser` `13.3.0`, Cheerio `1.2.0`.
-- **Database & Tooling:** Cloudflare D1 (SQLite), Drizzle ORM (via `void/db`), Vite `8.0.10`, Vite+ `0.1.21`, TypeScript `5.9.3`.
+- **Database & Tooling:** Cloudflare D1 (SQLite), Drizzle ORM (via `void/db`), Vite `8.0.10`, `vite-plus ^0.1.21`, TypeScript `5.9.3`.
 - **Infrastructure:** Cloudflare Workers (`workerd` runtime compatibility date `2026-08-22`).
 ---
 
@@ -122,7 +125,7 @@ flowchart TD
 | :--- | :--- | :--- | :--- |
 | **Walk Time Engine** | `lib/walktime.ts` | Calculates inter-hotel transit minutes and room capacity heuristics | `calculateWalkTime()`, `normalizeVenue()`, `getVenueCapacityStatus()` |
 | **Venue Maps & Floor Plans** | `lib/maps.ts`, `lib/maps-data.ts` | Venue resolution, booth coordinate lookup, and offline floor plan caching | `resolveVenueMap()`, `getOfficialEventUrl()`, `getPolygonPointsString()` |
-| **Ingestion Engine** | `lib/ingest.ts` | Scrapes schedule web pages and generates change diffs | `runIngestion()` |
+| **Ingestion Engine** | `lib/ingest.ts` | Scrapes schedule web pages and generates change diffs; records every execution in `ingestion_runs` run history | `runIngestion()`, `runIngestionWithRunLog()` |
 | **SSR Page Loader** | `pages/index.server.ts` | Pre-fetches initial events, facets, and change history on server render | `loader = defineHandler(...)` |
 | **PWA App Shell** | `pages/index.tsx` | Main application shell managing tabs, state, and sheets | `Page()` |
 | **UI Components** | `components/CyberDragonUi.tsx` | Glass design system UI components | `TabBar`, `Toast`, `DataCard`, `ProgressMeter`, `Badge`, `Tag`, `Button` |
@@ -132,7 +135,7 @@ flowchart TD
 | **Admin Dashboard** | `pages/admin.tsx`, `pages/admin.server.ts` | Ingestion control center with live logs, diff inspector, and run history | `AdminPage()`, `loader = defineHandler(...)` |
 | **Admin Endpoints** | `routes/api/admin/*.ts` | Admin-only ingestion execution, DB stats, and audit run queries | `export const POST = defineHandler(...)` |
 | **Admin CLI** | `scripts/make-admin.ts` | Promotes a registered user account to administrator | `makeAdmin()` |
-| **Feedback & Error Reporting** | `lib/errorReporting.ts`, `routes/api/feedback.ts` | Automated crash capture, sensitive credential redaction, deduplication, and feedback collection | `reportError()`, `setupGlobalErrorCatchers()`, `formatErrorMessage()` |
+| **Feedback & Error Reporting** | `lib/errorReporting.ts`, `routes/api/feedback.ts`, `routes/api/feedback/[id].ts` | Automated crash capture, sensitive credential redaction, deduplication, feedback collection, and admin triage status transitions | `reportError()`, `setupGlobalErrorCatchers()`, `formatErrorMessage()` |
 | **Error Boundary & Recovery** | `components/ErrorBoundary.tsx` | React class Error Boundary with CyberDragon glass fallback UI & reset/reload actions | `ErrorBoundary` |
 | **Automated Sync Cron** | `crons/sync-schedule.ts` | Scheduled background schedule synchronizer (every 4h pre-con, every 30m during con, early-return guard outside active window) | `default defineScheduled(...)`, `isWithinActiveWindow()`, `cron` |
 ---
@@ -255,13 +258,14 @@ erDiagram
 | `POST` | `/api/auth` | Password login & registration | `{ action: "register"\|"login", username, password, name }` | `{ success, user, token }` |
 | `POST` | `/api/auth/passkey` | WebAuthn passkey ceremonies | `?action=generate-register-options\|verify-register\|...` | `{ success, options\|user\|token }` |
 | `GET` | `/api/export-ics` | Export schedule as `.ics` | `?userId=` | `text/calendar` attachment |
-| `POST` | `/api/ingest` | Trigger schedule ingestion (admin only) | `{ days, maxDetailFetches }` | `{ success, result }` |
+| `POST` | `/api/ingest` | Trigger schedule ingestion (admin only) | `{ days, maxDetailFetches }` | `{ success, result }` — `result` includes `runId` |
 | `POST` | `/api/admin/ingest` | Execute admin ingestion run (admin only) | `{ mode, days, maxDetailFetches }` | `{ success, runId, result }` |
 | `GET` | `/api/admin/stats` | Database health metrics (admin only) | — | `{ success, stats }` |
 | `GET` | `/api/admin/runs` | Recent ingestion run history (admin only) | — | `{ success, runs }` |
 | `GET` | `/api/admin/runs/:id` | Single ingestion run with full logs (admin only) | — | `{ success, run }` |
 | `POST` | `/api/feedback` | Submit bug report or suggestion (public & automated error dispatch) | `{ kind, message, contact, userId, username, appVersion, pageUrl }` | `{ success, message }` |
 | `GET` | `/api/feedback` | List attendee feedback & error reports (admin only) | — | `{ success, feedback }` |
+| `PATCH` | `/api/feedback/:id` | Triage feedback status (admin only) | `{ status: "new"\|"in_progress"\|"done"\|"archived" }` | `{ success, feedback }` |
 For full interface specifications: `docs/interfaces/api-contracts.md`.
 
 ---
@@ -310,7 +314,7 @@ For step-by-step deployment and provisioning: `docs/guides/deployment-runbook.md
   - Attendee feedback submission validation, contact normalization, and admin-only feedback retrieval.
   - Error sanitization, Bearer/JWT/password token redaction, error signature deduplication, session rate limiting, and ErrorBoundary state transitions.
   - Cron schedule triggers, active window boundary evaluations, out-of-window skip logic, in-window D1 sync execution, and exact content hash verification.
-- **Live Test Result:** 95 tests executed, 95 passed, 0 failed across 12 test suites.
+- **Live Test Result:** 102 tests executed, 102 passed, 0 failed across 12 test files (`pnpm test`, 2026-08-26).
 
 ---
 

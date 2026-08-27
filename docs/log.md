@@ -3,6 +3,22 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-26 — Bundle Maintain Pass (Triage API, Run Logging, Cache Policy)
+
+- **Type:** Maintain (approved audit actions A1-A5).
+- **Gate:** Anchor `89144bd` (2026-08-24) resolved with 7 code commits outside `docs/` since it; worktree clean at `a733a56`.
+- **Scores:** `AGENTS.md` 105/110 (A) · `SYSTEM_DESIGN.md` 84/100 (B, currency drift fixed this pass) · `api-contracts.md` 55/60 (A). `walktime-and-venues.md`, `decisions/0001`, `deployment-runbook.md` not re-scored (unchanged since anchor; runbook got one action).
+- **Legacy OKF scan:** 0 of 5 concepts on v0.1; no `stale_after` keys; unverified concepts: 0.
+- **Changes:**
+  - `SYSTEM_DESIGN.md`: §6 gained `PATCH /api/feedback/:id` + `runId` note on `/api/ingest`; §4 module rows updated (Ingestion Engine exports `runIngestionWithRunLog()`, Feedback row includes `[id].ts`); §9 test result 95→102 tests / 12 test files (quoted from `pnpm test` 2026-08-26); Vite+ now cited as `vite-plus ^0.1.21` (manifest form; runtime banner resolves 0.1.24); four out-of-bounds `sources` ranges corrected (`lib/auth.ts` 101, `pages/admin.tsx` 1307, `lib/errorReporting.ts` 195, `crons/sync-schedule.ts` 45) and `feedback-status-code` source added; `verified` re-stamped for 2026-08-26.
+  - `api-contracts.md`: all 16 `sources` ranges re-verified against `wc -l` (4 corrected: `auth.ts` 1-76, `passkey.ts` 1-222, `ingest.ts` 1-29, `cron-sync-handler` 1-45); `generated` → `human:martinrojas` 2026-08-26 (session body edits) with `verified` event from this pass; new §8 "Legacy & Misc Endpoints" pointer table (password auth, changes, friends, legacy ingest, hello) closing the §7→§10 numbering gap; §9 cron behavior line now names `runIngestionWithRunLog()` + `user_id: "cron"` attribution; label↔id join checked (4 new inline labels, all resolve).
+  - `index.md`: `last_verified` → 2026-08-26.
+  - `deployment-runbook.md`: §3 routine-deploy steps gained the `CACHE_NAME` bump check (per AGENTS.md "PWA Cache Versioning" policy).
+- **Flagged, not fixed:** section numbering in `api-contracts.md` now runs 1-9 after closing the gap; pre-anchor numbering skipped 8-9. Root `README.md` untouched (not re-scored).
+
+Docs-freshness: head=a733a566cee3f8d544835938576ac5149eab533b date=2026-08-26 pass=maintain
+
+---
 ## 2026-08-26 — Cron & Legacy Ingestions Now Logged in Run History
 
 - **Type:** Bugfix (missing run-history records).
