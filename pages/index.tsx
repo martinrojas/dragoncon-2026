@@ -17,7 +17,7 @@ import {
   type DayItem,
 } from "../components/CyberDragonUi";
 import { PanelDetailModal } from "../components/PanelDetailModal";
-import { calculateWalkTime } from "../lib/walktime";
+import { calculateWalkTime, parseTimeDisplay } from "../lib/walktime";
 import { AppStoragePanel, type InstallPromptEvent } from "../components/AppStoragePanel";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -100,44 +100,7 @@ export const TRACK_COLORS: Record<string, string> = {
   COSTUMING: "var(--gold-500)",
 };
 
-export function parseTimeDisplay(timeStr: string | null | undefined): {
-  start: string;
-  end?: string;
-  slotLabel: string;
-} {
-  if (!timeStr) return { start: "TBD", slotLabel: "VARIES" };
-  const parts = timeStr.includes("—") ? timeStr.split("—") : timeStr.split("-");
-  const rawStart = parts[0]?.trim() || "TBD";
-  const rawEnd = parts[1]?.trim();
-
-  let cleanStart = rawStart;
-  let cleanEnd = rawEnd;
-  let slotLabel = "VARIES";
-
-  const match = rawStart.match(/^0?(\d+):(\d+)\s*(AM|PM)?/i);
-  if (match) {
-    const hr = parseInt(match[1], 10);
-    const min = match[2];
-    const ampm = match[3] ? match[3].toUpperCase() : "PM";
-    cleanStart = `${hr}:${min}`;
-    slotLabel = `${hr} ${ampm}`;
-  }
-
-  if (rawEnd) {
-    const endMatch = rawEnd.match(/^0?(\d+):(\d+)\s*(AM|PM)?/i);
-    if (endMatch) {
-      const endHr = parseInt(endMatch[1], 10);
-      const endMin = endMatch[2];
-      cleanEnd = `${endHr}:${endMin}`;
-    }
-  }
-
-  return {
-    start: cleanStart,
-    end: cleanEnd,
-    slotLabel,
-  };
-}
+export { parseTimeDisplay };
 
 export function parseVenueRoom(locationStr: string | null | undefined): {
   venue: string;
@@ -898,25 +861,37 @@ export default function HomePage({
 
   // Filter events according to smart checkboxes and segmented control
   const filteredEvents = useMemo(() => {
-    return eventsList.filter((item) => {
-      if (selectedDay && item.day !== selectedDay) {
-        return false;
-      }
-      if (scheduleViewFilter === "Saved" && !userEventStatusMap[item.id]) {
-        return false;
-      }
-      if (hideEndedPanels && item.status === "done") {
-        return false;
-      }
-      if (hideConflicts && checkEventConflict(item.id)) {
-        return false;
-      }
-      if (walkabilityOnly) {
-        const walk = calculateWalkTime(getPrecedingVenue(item), item.location);
-        if (walk.minutes > 10) return false;
-      }
-      return true;
-    });
+    return eventsList
+      .filter((item) => {
+        if (selectedDay && item.day !== selectedDay) {
+          return false;
+        }
+        if (scheduleViewFilter === "Saved" && !userEventStatusMap[item.id]) {
+          return false;
+        }
+        if (hideEndedPanels && item.status === "done") {
+          return false;
+        }
+        if (hideConflicts && checkEventConflict(item.id)) {
+          return false;
+        }
+        if (walkabilityOnly) {
+          const walk = calculateWalkTime(getPrecedingVenue(item), item.location);
+          if (walk.minutes > 10) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (a.startsAt && b.startsAt) {
+          const diff = a.startsAt.localeCompare(b.startsAt);
+          if (diff !== 0) return diff;
+        } else if (a.startsAt) {
+          return -1;
+        } else if (b.startsAt) {
+          return 1;
+        }
+        return (a.title || "").localeCompare(b.title || "");
+      });
   }, [eventsList, selectedDay, scheduleViewFilter, userEventStatusMap, hideEndedPanels, hideConflicts, walkabilityOnly, homeVenue]);
 
   // Group events by time slots for TimeRail layout

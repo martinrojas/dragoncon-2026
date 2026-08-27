@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { defineHandler } from "void";
-import { db, eq, like, or, sql } from "void/db";
+import { asc, db, eq, like, or, sql } from "void/db";
 import { eventChanges, events } from "../../db/schema";
 
 export const GET = defineHandler(async (c: Context) => {
@@ -55,7 +55,9 @@ export const GET = defineHandler(async (c: Context) => {
     conditions.push(like(events.location, `%${location}%`));
   }
 
-  let allEvents = await query.where(sql.join(conditions, sql` AND `));
+  let allEvents = await query
+    .where(sql.join(conditions, sql` AND `))
+    .orderBy(asc(events.startsAt), asc(events.title));
 
   if (onlyChanged) {
     const changesList = await db.select({ eventId: eventChanges.eventId }).from(eventChanges);

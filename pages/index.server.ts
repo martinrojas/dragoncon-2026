@@ -1,5 +1,5 @@
 import { defineHandler, defineHead, type InferProps } from "void";
-import { db, desc, eq } from "void/db";
+import { asc, db, desc, eq } from "void/db";
 import { eventChanges, events } from "../db/schema";
 
 export type Props = InferProps<typeof loader>;
@@ -8,7 +8,8 @@ export const loader = defineHandler(async () => {
   const allEvents = await db
     .select()
     .from(events)
-    .where(eq(events.isDeleted, 0));
+    .where(eq(events.isDeleted, 0))
+    .orderBy(asc(events.startsAt), asc(events.title));
 
   const recentChanges = await db
     .select()

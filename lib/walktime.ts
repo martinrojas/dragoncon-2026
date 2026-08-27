@@ -109,3 +109,42 @@ export function getVenueCapacityStatus(
     return { pct, status: "Seating available", accent: "var(--jade-500)" };
   }
 }
+
+export function parseTimeDisplay(timeStr: string | null | undefined): {
+  start: string;
+  end?: string;
+  slotLabel: string;
+} {
+  if (!timeStr) return { start: "TBD", slotLabel: "VARIES" };
+  const parts = timeStr.includes("—") ? timeStr.split("—") : timeStr.split("-");
+  const rawStart = parts[0]?.trim() || "TBD";
+  const rawEnd = parts[1]?.trim();
+
+  let cleanStart = rawStart;
+  let cleanEnd = rawEnd;
+  let slotLabel = "VARIES";
+
+  const match = rawStart.match(/^0?(\d+):(\d+)\s*(AM|PM)?/i);
+  if (match) {
+    const hr = parseInt(match[1], 10);
+    const min = match[2];
+    const ampm = match[3] ? match[3].toUpperCase() : "PM";
+    cleanStart = `${hr}:${min}`;
+    slotLabel = `${hr} ${ampm}`;
+  }
+
+  if (rawEnd) {
+    const endMatch = rawEnd.match(/^0?(\d+):(\d+)\s*(AM|PM)?/i);
+    if (endMatch) {
+      const endHr = parseInt(endMatch[1], 10);
+      const endMin = endMatch[2];
+      cleanEnd = `${endHr}:${endMin}`;
+    }
+  }
+
+  return {
+    start: cleanStart,
+    end: cleanEnd,
+    slotLabel,
+  };
+}
