@@ -3,6 +3,20 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-26 — Social Metadata & Brand Asset Generation
+
+- **Type:** Feature (page metadata + generated brand assets).
+- **Summary:** Full Open Graph / Twitter card set, fixed the manifest's missing icons, favicon, and apple-touch icon. Artwork is generated (not AI): an angular dragon-glyph mark composed in SVG from the CyberDragon Glass tokens (`#0C0E11` canvas, purple-600/400, gold-500/400), rasterized via the browser device and committed alongside its reproducible generator.
+- **Changes:**
+  - `scripts/og-art.html` (new): single-page generator for `og-image` (1200×630), `icon-512`, `icon-192`, `apple-touch-icon` (180) — element-screenshot each node after `document.fonts.ready`, then `sips` to exact pixel sizes (device pixel ratio 1.25 otherwise inflates captures).
+  - `public/`: `og-image.png`, `icon-512.png`, `icon-192.png`, `apple-touch-icon.png` (generated), `favicon.svg` (hand-written vector).
+  - `void.json`: OG block switched to canonical `property="og:*"` form (void schema supports `property`; requires a dev-server restart to reload), Twitter `name=` block, richer description with "Sep 3–7, 2026 · Atlanta, GA", favicon + apple-touch-icon links.
+  - `pages/index.server.ts`: page-level description override updated to the new copy (it was masking the global head description).
+  - `public/manifest.webmanifest`: `theme_color` aligned to canvas `#0C0E11` (was `#6b21a8`, clashing with head theme-color); icon entries now resolve to real files.
+  - `public/sw.js`: `CACHE_NAME` → `dragoncon-pwa-v3` (asset-change policy) + icons/manifest precached for offline install.
+- **Verification:** dev-server smoke — served HTML carries all OG `property` tags + Twitter tags + new description; all five assets return 200 with correct content types; `void.json`/`manifest.webmanifest` parse. Glyph iterated twice against rendered screenshots (overflow fix, horn/skull seam fix).
+
+---
 ## 2026-08-26 — Bundle Maintain Pass (Triage API, Run Logging, Cache Policy)
 
 - **Type:** Maintain (approved audit actions A1-A5).

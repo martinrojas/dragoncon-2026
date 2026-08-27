@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="gp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8B54E8"/><stop offset="0.55" stop-color="#5B21B6"/><stop offset="1" stop-color="#3B1478"/>
+    </linearGradient>
+    <linearGradient id="gp2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6D2ED0"/><stop offset="1" stop-color="#2A0E52"/>
+    </linearGradient>
+    <radialGradient id="bg" cx="0.3" cy="0.22" r="0.95">
+      <stop offset="0" stop-color="#4A1A96"/><stop offset="0.55" stop-color="#1B0F38"/><stop offset="1" stop-color="#0C0E11"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <polygon points="110,180 320,130 462,242 400,266 428,312 322,346 176,352 118,296" fill="url(#gp)"/>
+  <polygon points="320,130 176,28 244,196" fill="url(#gp2)" stroke="#E8B93A" stroke-width="10" stroke-linejoin="round"/>
+  <polygon points="176,352 322,346 270,412 196,398" fill="url(#gp2)" stroke="#E8B93A" stroke-width="8" stroke-linejoin="round"/>
+  <polygon points="306,206 364,214 344,242 294,228" fill="#F0CB6B"/>
+</svg>

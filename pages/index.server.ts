@@ -55,7 +55,7 @@ export const head = defineHead<Props>(() => {
   return {
     title: "CyberDragon | Dragon Con 2026",
     meta: [
-      { name: "description", content: "Mobile companion PWA for Dragon Con 2026 in Atlanta, GA" },
+      { name: "description", content: "Offline-first companion app for Dragon Con 2026 — schedule browsing, hotel walk times, friend sync, and live schedule changes. Sep 3–7, 2026 · Atlanta, GA." },
     ],
   };
 });

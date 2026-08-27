@@ -1,5 +1,5 @@
-const CACHE_NAME = "dragoncon-pwa-v2";
-const ASSETS_TO_CACHE = ["/", "/manifest.webmanifest"];
+const CACHE_NAME = "dragoncon-pwa-v3";
+const ASSETS_TO_CACHE = ["/", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
