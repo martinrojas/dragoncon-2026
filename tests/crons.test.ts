@@ -89,8 +89,8 @@ test("cron configuration exports expected schedules", () => {
   assert.strictEqual(cron.length, 3);
   assert.deepStrictEqual(cron, [
     "0 */4 * 8 *",
-    "0 */4 1-2 9 *",
-    "*/30 * 3-7 9 *",
+    "0 */2 1-2 9 *",
+    "*/10 * 3-7 9 *",
   ]);
 });
 
