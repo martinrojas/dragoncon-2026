@@ -206,11 +206,25 @@ function detailHtml(fixture: DetailFixture): string {
   </body></html>`;
 }
 
-/** Installs a fetch mock keyed by exact URL for the duration of one test. */
-function withMockedFetch<T>(routes: Map<string, string>, fn: () => Promise<T>): Promise<T> {
+/**
+ * Installs a fetch mock keyed by exact URL for the duration of one test.
+ *
+ * `completionTicks` holds per-URL microtask yield counts. Concurrent fetches all
+ * start before any resolves, so a URL with more yields completes later — which
+ * lets a test force detail pages to *complete* out of listing order and prove
+ * that waves still append results deterministically. Microtask yields keep this
+ * deterministic and instant; wall-clock delays would make it timing-dependent.
+ */
+function withMockedFetch<T>(
+  routes: Map<string, string>,
+  fn: () => Promise<T>,
+  completionTicks?: Map<string, number>,
+): Promise<T> {
   const original = global.fetch;
   global.fetch = (async (url: string | URL) => {
     const key = typeof url === "string" ? url : url.toString();
+    const ticks = completionTicks?.get(key) ?? 0;
+    for (let i = 0; i < ticks; i++) await Promise.resolve();
     const body = routes.get(key);
     if (body === undefined) {
       return new Response("", { status: 404 });
@@ -1042,6 +1056,123 @@ test("no write statement exceeds D1's 100-bound-parameter limit", async () => {
     statements.some((s) => s.params > 15),
     "expected at least one multi-row statement to be recorded",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Fix Round 5: detail fetches run in concurrent waves (6 simultaneous
+// connections is the Workers per-invocation ceiling), which must not change
+// result ordering, budget accounting, or truncation semantics.
+// ---------------------------------------------------------------------------
+
+test("concurrent waves append results in listing order even when fetches finish out of order", async () => {
+  const day = "WaveOrderDay";
+  const dayParam = "waveorderday";
+  const items = Array.from({ length: 6 }, (_, i) => ({
+    id: `9aaa${String(i).padStart(8, "0")}`,
+    title: `Wave Event ${i}`,
+    timeStr: `Time W${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  // Reverse the completion order inside the wave: the first listing entry
+  // resolves last, the last resolves first.
+  const ticks = new Map<string, number>();
+  items.forEach((it, i) => {
+    routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${i}`, description: `Desc ${i}` }));
+    ticks.set(`${BASE_URL}/event/${it.id}`, (items.length - i) * 4);
+  });
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] }), ticks),
+  );
+
+  assert.strictEqual(result.created, 6);
+  assert.deepStrictEqual(
+    result.diffSummary.createdEvents.map((e) => e.id),
+    items.map((it) => it.id),
+    "created events must follow listing order, not completion order",
+  );
+});
+
+test("a wave trimmed by the remaining budget still truncates the day", async () => {
+  // Two shapes matter:
+  //  - listing shorter than the wave stride (5 events, budget 3): advancing the
+  //    cursor by the stride instead of the wave length jumped past the end of
+  //    the listing, skipped the budget-exhausted check, and let the deletion
+  //    sweep run against a partial scrape.
+  //  - multi-wave with a trimmed tail (15 events, budget 8): the budget must
+  //    still bound fetches exactly when it is not a multiple of the stride.
+  const cases = [
+    { label: "short listing", prefix: "9bbb", size: 5, budget: 3 },
+    { label: "trimmed tail", prefix: "9bcc", size: 15, budget: 8 },
+  ];
+
+  for (const { label, prefix, size, budget } of cases) {
+    const day = `WaveBudgetDay-${prefix}`;
+    const dayParam = `wavebudgetday${prefix}`;
+    const items = Array.from({ length: size }, (_, i) => ({
+      id: `${prefix}${String(i).padStart(8, "0")}`,
+      title: `Budget Wave Event ${i}`,
+      timeStr: `Time B${i}`,
+    }));
+
+    // A pre-existing row the deletion sweep would soft-delete if a partial
+    // scrape were ever mistaken for a complete one.
+    const staleId = `${prefix}99999999`;
+    insertEvent({
+      id: staleId,
+      title: "Wave Stale Panel",
+      day,
+      location: "Room S",
+      timeString: "Old",
+      description: "",
+      contentHash: await computeContentHash("Wave Stale Panel", "Room S", "Old", ""),
+    });
+
+    const routes = new Map<string, string>();
+    routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+    for (const it of items) {
+      routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `Desc ${it.id}` }));
+    }
+
+    const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam], maxDetailFetches: budget })),
+    );
+
+    assert.strictEqual(result.totalScraped, budget, `${label}: budget must bound fetches exactly`);
+    assert.strictEqual(result.created, budget, `${label}: every fetched event should be created`);
+    assert.strictEqual(result.deleted, 0, `${label}: a truncated day must not run the deletion sweep`);
+    assert.strictEqual(getEvent(staleId)?.is_deleted, 0, `${label}: stale row must survive a partial scrape`);
+    assert.strictEqual(getEvent(items[budget].id), undefined, `${label}: events past the budget must not be fetched`);
+  }
+});
+
+test("one failed detail page inside a wave does not lose its siblings", async () => {
+  const day = "WaveErrorDay";
+  const dayParam = "waveerrorday";
+  const items = Array.from({ length: 4 }, (_, i) => ({
+    id: `9ccc${String(i).padStart(8, "0")}`,
+    title: `Wave Error Event ${i}`,
+    timeStr: `Time E${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  // items[2] intentionally has no detail route: it 404s mid-wave.
+  for (const it of items.filter((_, i) => i !== 2)) {
+    routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `Desc ${it.id}` }));
+  }
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+  );
+
+  assert.strictEqual(result.created, 3, "siblings of a failed page must still persist");
+  assert.strictEqual(getEvent(items[2].id), undefined);
+  for (const it of items.filter((_, i) => i !== 2)) {
+    assert.ok(getEvent(it.id), `${it.id} should have been written`);
+  }
 });
 // ---------------------------------------------------------------------------
 // Fix Round 2: full-day ingestion must stay far below per-invocation

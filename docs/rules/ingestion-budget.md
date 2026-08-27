@@ -16,6 +16,9 @@ sources:
   - id: ingest-tests
     resource: tests/ingest-modes.test.ts:972-1045
     title: Budget bounds/wiring and the D1 100-bound-parameter regression test
+  - id: ingest-concurrency
+    resource: lib/ingest.ts:22-26
+    title: "DETAIL_CONCURRENCY = 6 and the wave loop (fetchAndParse, cursor advance, listing-order append)"
   - id: prod-measurement
     resource: session:2026-08-27
     title: "Workers Logs, admin sync of Sep++6: 7,300 ms CPU / 258 s wall for 400 detail fetches of 637 listed events"
@@ -53,6 +56,13 @@ sources:
 
 - Days process **smallest-first** (ascending listing size, listings fetched once up front). Fixed upstream order starved late days: Wed(4)+Thu(129) left 267 of the old 400 budget, Friday alone exhausted it, and Sat/Sun got zero attempts [^session-log]. Ascending order guarantees small days *complete* — deletion scans included — and concentrates any shortfall explicitly on the largest day, announced mid-run with exact progress counts.
 
+## Fetch concurrency rule
+
+- Detail pages are fetched in waves of `DETAIL_CONCURRENCY = 6` [^ingest-concurrency], the documented Workers ceiling on simultaneous connections awaiting response headers; beyond six, fetches merely queue [^wrangler-limits]. Measured against live upstream: **625 → 152 ms per event (4.1×)**, taking Sunday's 637 events from **~6.6 min to ~1.6 min** of wall time. CPU is unaffected — parsing is still single-threaded — so this buys only latency, which is what a 10-minute cadence needs given Cloudflare does not prevent overlapping cron runs [^cron-rotation].
+- **The cursor advances by the wave's actual length, never by the stride.** A wave trimmed by the remaining budget must leave the cursor on the first unfetched event, so the next pass observes an exhausted budget and marks the day `truncated`. Advancing by the full stride skipped that check whenever a trimmed wave ran off the end of the listing, which let the deletion sweep run against a partial scrape — a real regression, caught by the existing truncation tests [^ingest-tests].
+- Results are appended in **listing order, not completion order**, so `parsedItems`, the diff summary and logs stay deterministic regardless of which page returns first. A test forces reversed completion inside a wave via microtask yields (no wall-clock delays) and fails if results are appended as they resolve [^ingest-tests].
+- A failure inside a wave costs exactly itself: `fetchAndParse` returns `null` on a bad status or a throw, logging and counting exactly as the sequential path did, and its siblings still persist [^ingest-tests].
+
 ## Write sizing rule
 
 - D1 caps a query at **100 bound parameters**, and the cap applies per statement even inside `batch()`. Multi-row INSERTs bind one parameter per *column* per row, so they are sized by `ROW_CHUNK = 6` against the widest table (`events`, 15 columns → 90 parameters). Statements binding one parameter per row (`WHERE id IN (…)` reads, the bulk lastSeen UPDATE) use `ID_CHUNK = 50` [^ingest-module].
@@ -77,7 +87,8 @@ sources:
 
 [^ingest-module]: `lib/ingest.ts:8-43`, `lib/ingest.ts:143-178`
 [^ingest-filter]: `lib/ingest.ts:207-242`
-[^ingest-tests]: `tests/ingest-modes.test.ts:15-39`, `tests/ingest-modes.test.ts:972-1045`
+[^ingest-tests]: `tests/ingest-modes.test.ts:15-39`, `tests/ingest-modes.test.ts:972-1045`, `tests/ingest-modes.test.ts:1062-1180`
+[^ingest-concurrency]: `lib/ingest.ts:22-26`, `lib/ingest.ts:388-489`
 [^prod-measurement]: Workers Logs, admin sync of `Sep++6` (2026-08-27): `cpuTimeMs: 7300`, `wallTimeMs: 258164`, 400 detail fetches of 637 listed events, `TRUNCATED`
 [^cron-rotation]: `crons/sync-schedule.ts:13-60`
 [^wrangler-limits]: `wrangler.jsonc:8-15`

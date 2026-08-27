@@ -19,6 +19,12 @@ const ID_CHUNK = 50;
 // then ran into D1's separate 1000-queries-per-invocation ceiling on big days.
 const ROW_CHUNK = 6;
 
+// Detail pages fetched concurrently per wave. Workers allows six simultaneous
+// connections waiting on response headers per invocation, so six is the ceiling
+// worth using; beyond it fetches just queue.
+// https://developers.cloudflare.com/workers/platform/limits/#simultaneous-open-connections
+const DETAIL_CONCURRENCY = 6;
+
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -372,26 +378,21 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       contentHash: string;
     }> = [];
 
-    for (const item of eventLinks) {
-      if (detailFetchBudget <= 0) {
-        truncated = true;
-        log(
-          `Detail-fetch budget exhausted inside ${dayHeader}: ${scrapedIdsForDay.size}/${eventLinks.length} events fetched; marking day truncated (deletion scan skipped).`,
-        );
-        break;
-      }
-      detailFetchBudget--;
-      scrapedEventIds.add(item.id);
-      scrapedIdsForDay.add(item.id);
-      const detailUrl = `${BASE_URL}/event/${item.id}`;
+    type ParsedItem = (typeof parsedItems)[number];
 
+    /**
+     * Fetches and parses one detail page. Returns null when the page is
+     * unavailable or throws; logging and error counting are identical to the
+     * old sequential path, so a bad page still costs exactly itself.
+     */
+    const fetchAndParse = async (item: (typeof eventLinks)[number]): Promise<ParsedItem | null> => {
       try {
-        const detailRes = await fetch(detailUrl, {
+        const detailRes = await fetch(`${BASE_URL}/event/${item.id}`, {
           headers: { "User-Agent": USER_AGENT },
         });
         if (!detailRes.ok) {
           log(`Skipping event ${item.id} (${item.title}): detail fetch status ${detailRes.status}`);
-          continue;
+          return null;
         }
         const detailHtml = await detailRes.text();
         const $d = cheerio.load(sliceDetailRegion(detailHtml));
@@ -428,10 +429,9 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
         });
 
         const { startsAt, endsAt, durationMinutes } = parseDateTime(dateStr, durationStr);
-
         const contentHash = await computeContentHash(item.title, location, item.timeStr, description);
 
-        parsedItems.push({
+        return {
           item,
           location,
           description,
@@ -442,10 +442,48 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
           endsAt,
           durationMinutes,
           contentHash,
-        });
+        };
       } catch (e: unknown) {
         log(`Error processing event ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
         errorCount++;
+        return null;
+      }
+    };
+
+    // Fetch in waves of DETAIL_CONCURRENCY. Roughly 97% of a run's wall time is
+    // upstream I/O wait (production: 7.3 s CPU inside 258 s wall), so waves cut
+    // a 637-event day from ~6.9 min to ~70 s and keep a run well inside the
+    // 10-minute con-week cadence, which Cloudflare does not protect from
+    // overlapping. Parsing stays single-threaded, so CPU cost is unchanged.
+    //
+    // The cursor advances by the wave's actual length, never by
+    // DETAIL_CONCURRENCY: a wave trimmed by the remaining budget must leave the
+    // cursor on the first unfetched event so the next pass sees an exhausted
+    // budget and marks the day truncated. Advancing by the full stride skipped
+    // that check whenever a partial wave ended the listing, which let the
+    // deletion sweep run against an incomplete scrape.
+    let cursor = 0;
+    while (cursor < eventLinks.length) {
+      if (detailFetchBudget <= 0) {
+        truncated = true;
+        log(
+          `Detail-fetch budget exhausted inside ${dayHeader}: ${scrapedIdsForDay.size}/${eventLinks.length} events fetched; marking day truncated (deletion scan skipped).`,
+        );
+        break;
+      }
+
+      const wave = eventLinks.slice(cursor, cursor + Math.min(DETAIL_CONCURRENCY, detailFetchBudget));
+      cursor += wave.length;
+      detailFetchBudget -= wave.length;
+      for (const item of wave) {
+        scrapedEventIds.add(item.id);
+        scrapedIdsForDay.add(item.id);
+      }
+
+      // Appended in listing order rather than completion order, so parsedItems,
+      // logs and diff summaries stay deterministic.
+      for (const parsed of await Promise.all(wave.map(fetchAndParse))) {
+        if (parsed) parsedItems.push(parsed);
       }
     }
 
