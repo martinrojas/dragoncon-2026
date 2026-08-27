@@ -24,6 +24,22 @@ export interface IngestionRun {
   completedAt: string | null;
 }
 
+// `started_at`/`completed_at` come from SQLite `datetime('now')` -- UTC wall
+// time with no zone suffix. Normalize to UTC, then render in con time (ET).
+export function formatRunTimestamp(raw: string | null): string {
+  if (!raw) return "-";
+  const normalized = /Z$|[+-]\d{2}:?\d{2}$/.test(raw) ? raw : `${raw}Z`;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export interface IngestDiffSummary {
   createdEvents?: Array<{ id: string; title: string; location?: string; time?: string }>;
   updatedEvents?: Array<{ id: string; title?: string; changes?: string }>;
@@ -111,7 +127,9 @@ export default function AdminPage(props: Props) {
   // Controls state
   const [syncMode, setSyncMode] = useState<"sync" | "dry-run" | "hard-resync">("sync");
   const [selectedDays, setSelectedDays] = useState<string[]>(["All"]);
-  const [throttleLimit, setThrottleLimit] = useState<number | undefined>(undefined);
+  // Sized for the largest single con day (~650 upstream events) under the
+  // Workers subrequests=2000 ceiling; still user-throttleable per run.
+  const [throttleLimit, setThrottleLimit] = useState<number | undefined>(1900);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showHardResyncModal, setShowHardResyncModal] = useState(false);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
@@ -1021,7 +1039,7 @@ export default function AdminPage(props: Props) {
                       <tr key={run.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                         <td style={{ padding: 8, color: "var(--gold-400)" }}>#{run.id}</td>
                         <td style={{ padding: 8, color: "var(--text-tertiary)" }}>
-                          {run.startedAt ? new Date(run.startedAt).toLocaleString() : "-"}
+                          {formatRunTimestamp(run.startedAt)}
                         </td>
                         <td style={{ padding: 8 }}>
                           <span
@@ -1194,7 +1212,7 @@ export default function AdminPage(props: Props) {
                         )}
                       </div>
                       <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : "-"}
+                        {formatRunTimestamp(item.createdAt)}
                       </span>
                     </div>
 

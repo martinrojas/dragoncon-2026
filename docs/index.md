@@ -20,6 +20,8 @@ last_verified: 2026-08-26
 | [`interfaces/api-contracts.md`](/docs/interfaces/api-contracts.md) | `API Contracts` | Request and response schemas for all file-based Hono endpoints on Cloudflare Workers. |
 | [`decisions/0001-cloudflare-d1-self-host.md`](/docs/decisions/0001-cloudflare-d1-self-host.md) | `Decision` | Architectural decision to deploy directly to Cloudflare Workers and D1 SQLite using Void's self-host backend. |
 | [`guides/deployment-runbook.md`](/docs/guides/deployment-runbook.md) | `Guide` | Step-by-step runbook for provisioning, migrating, and deploying the CyberDragon app on Cloudflare Workers and D1. |
+| [`rules/ingestion-budget.md`](/docs/rules/ingestion-budget.md) | `Domain Rules` | Invariants for the shared ingestion detail budget, smallest-first day ordering, ET past-day skipping, and batched D1 writes. |
+| [`interfaces/upstream-schedule-api.md`](/docs/interfaces/upstream-schedule-api.md) | `API Contracts` | Param contract and observed behavior of the upstream `app.core-apps.com/dragoncon26` schedule source. |
 
 ---
 

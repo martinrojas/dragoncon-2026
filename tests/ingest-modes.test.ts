@@ -931,3 +931,177 @@ test("sync mode applies a safe default detail-fetch budget when maxDetailFetches
   assert.strictEqual(result.totalScraped, DEFAULT_DETAIL_FETCH_BUDGET);
   assert.strictEqual(result.created, 0);
 });
+// ---------------------------------------------------------------------------
+// Fix Round 2: full-day ingestion must stay far below per-invocation
+// subrequest ceilings (D1 statements + HTTP detail fetches), so a single
+// big day can complete inside one Worker invocation.
+// ---------------------------------------------------------------------------
+
+test("full-day ingestion of 120 fresh events keeps D1 statement count low", async () => {
+  const day = "OpBudgetDay";
+  const dayParam = "opbudgetday";
+  const items = Array.from({ length: 120 }, (_, i) => ({
+    id: `dddd${String(i).padStart(8, "0")}`,
+    title: `Fresh Event ${i}`,
+    timeStr: `Time ${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  for (const item of items) {
+    routes.set(
+      `${BASE_URL}/event/${item.id}`,
+      detailHtml({ location: `Loc ${item.id}`, description: `Desc ${item.id}` }),
+    );
+  }
+
+  let dbStatements = 0;
+  const originalPrepare = sharedFakeD1.prepare;
+  sharedFakeD1.prepare = ((sqlText: string) => {
+    dbStatements++;
+    return originalPrepare(sqlText);
+  }) as typeof sharedFakeD1.prepare;
+
+  try {
+    const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    );
+
+    assert.strictEqual(result.totalScraped, 120);
+    assert.strictEqual(result.created, 120);
+    // Batched reads/writes: chunked IN lookups + multi-row inserts must keep
+    // total D1 statements in the low dozens, not one-to-three per event.
+    assert.ok(dbStatements < 200, `expected <200 D1 statements, got ${dbStatements}`);
+  } finally {
+    sharedFakeD1.prepare = originalPrepare;
+  }
+});
+
+test("weekday day labels from the admin dashboard are normalized to upstream Sep++N params", async () => {
+  const routes = new Map<string, string>();
+  // The listing route only exists under the canonical upstream param; if the
+  // alias were posted verbatim ("Saturday"), the fetch would miss and the
+  // run would report a failed day.
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=Sep++5`,
+    dayListingHtml("Saturday, Sep  5", [{ id: "eeee4001", title: "Alias Panel", timeStr: "Time A" }]),
+  );
+  routes.set(`${BASE_URL}/event/eeee4001`, detailHtml({ location: "Loc A", description: "Desc A" }));
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", days: ["Saturday"] })),
+  );
+
+  assert.strictEqual(result.errors, 0);
+  assert.strictEqual(result.totalScraped, 1);
+  assert.strictEqual(result.created, 1);
+});
+
+test("smaller days complete first so late days can never starve the budget", async () => {
+  const bigDay = "BigLateDay";
+  const bigDayParam = "biglateday";
+  const smallDay = "SmallEarlyDay";
+  const smallDayParam = "smallearlyday";
+
+  // Requested order is deliberately large-first; ascending processing must
+  // flip it. Six big items, two small items, shared budget of five: the
+  // small day completes (2 fetches, deletion scan runs), the big day takes
+  // the remaining three and is flagged truncated.
+  insertEvent({
+    id: "ffff1001",
+    title: "Stale Small Event",
+    day: smallDay,
+    location: "Loc S",
+    timeString: "Old Time S",
+    contentHash: "stale-order-1",
+  });
+
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${bigDayParam}`,
+    dayListingHtml(bigDay, [
+      { id: "ffff2001", title: "Big 1", timeStr: "TB1" },
+      { id: "ffff2002", title: "Big 2", timeStr: "TB2" },
+      { id: "ffff2003", title: "Big 3", timeStr: "TB3" },
+      { id: "ffff2004", title: "Big 4", timeStr: "TB4" },
+      { id: "ffff2005", title: "Big 5", timeStr: "TB5" },
+      { id: "ffff2006", title: "Big 6", timeStr: "TB6" },
+    ]),
+  );
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${smallDayParam}`,
+    dayListingHtml(smallDay, [
+      { id: "ffff3001", title: "Small New", timeStr: "TS1" },
+      { id: "ffff4001", title: "Small Kept", timeStr: "Old Time S" },
+    ]),
+  );
+  for (const id of ["ffff2001", "ffff2002", "ffff2003"]) {
+    routes.set(`${BASE_URL}/event/${id}`, detailHtml({ location: `Loc ${id}`, description: "D" }));
+  }
+  for (const id of ["ffff3001", "ffff4001"]) {
+    routes.set(`${BASE_URL}/event/${id}`, detailHtml({ location: `Loc ${id}`, description: "D" }));
+  }
+  routes.set(
+    `${BASE_URL}/event/ffff4001`,
+    detailHtml({ location: "Loc S", description: "", dateStr: "", durationStr: "" }),
+  );
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () =>
+      runIngestion({ mode: "sync", days: [bigDayParam, smallDayParam], maxDetailFetches: 5 }),
+    ),
+  );
+
+  // Small day fully processed, including its deletion scan.
+  assert.strictEqual(getEvent("ffff3001")?.title, "Small New");
+  assert.strictEqual(result.log.some((l) => l.includes("[DELETE] Stale Small Event")), true);
+  // Big day consumed exactly the leftover budget and was marked truncated.
+  assert.strictEqual(getEvent("ffff4001")?.title, "Small Kept");
+  assert.strictEqual(result.created, 5); // ffff3001 + ffff4001 + ffff2001..2003
+  assert.strictEqual(result.totalScraped, 5);
+  assert.ok(result.log.some((l) => l.includes("budget exhausted inside BigLateDay")));
+  assert.ok(result.log.some((l) => l.includes("Processing order (smallest-first): SmallEarlyDay(2), BigLateDay(6)")));
+});
+
+test("default day expansion skips already-passed con days but keeps today and the future", async () => {
+  // Saturday, Sep 5, 2026 mid-afternoon ET: Wed-Fri are history.
+  const saturdayNoon = new Date("2026-09-05T18:00:00Z");
+  const routes = new Map<string, string>();
+  const liveDays = ["Sep++5", "Sep++6", "Sep++7", "Sep++8"];
+  routes.set(`${BASE_URL}/events/view_by_day?day=Sep++6`, dayListingHtml("Sunday, Sep  6", []));
+  for (const d of liveDays) {
+    if (!routes.has(`${BASE_URL}/events/view_by_day?day=${d}`)) {
+      routes.set(
+        `${BASE_URL}/events/view_by_day?day=${d}`,
+        dayListingHtml(`Rotation ${d}`, []),
+      );
+    }
+  }
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", now: saturdayNoon })),
+  );
+
+  assert.strictEqual(result.errors, 0);
+  assert.ok(result.log.some((l) => l.includes("Skipping already-passed con day(s): Sep++2, Sep++3, Sep++4")));
+  assert.ok(!result.log.some((l) => l.includes("Fetching day listing: Sep++2...")));
+  assert.ok(result.log.some((l) => l.includes("Found 0 events for day Rotation Sep++7")));
+});
+
+test("explicitly requested past days bypass the skip filter", async () => {
+  const saturdayNoon = new Date("2026-09-05T18:00:00Z");
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=Sep++3`,
+    dayListingHtml("Thursday, Sep  3", []),
+  );
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () =>
+      runIngestion({ mode: "sync", days: ["Sep++3"], now: saturdayNoon }),
+    ),
+  );
+
+  assert.strictEqual(result.errors, 0);
+  assert.ok(result.log.some((l) => l.includes("Fetching day listing: Sep++3...")));
+});

@@ -3,9 +3,49 @@ import { runIngestionWithRunLog } from "../lib/ingest.ts";
 
 export const cron = [
   "0 */4 * 8 *", // Aug 24-31: every 4 hours
-  "0 */4 1-2 9 *", // Sep 1-2: every 4 hours
-  "*/30 * 3-7 9 *", // Sep 3-7 (Dragon Con): every 30 minutes
+  "0 */2 1-2 9 *", // Sep 1-2: every 2 hours
+  "*/10 * 3-7 9 *", // Sep 3-7 (Dragon Con): every 10 minutes
 ];
+
+// One con day per tick: each invocation gets the Worker's whole subrequest
+// budget instead of sharing it across all seven days (which starved
+// Saturday/Sunday whenever earlier days consumed it).
+export const SYNC_DAYS = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"] as const;
+
+const CYCLE_MS = 4 * 60 * 60 * 1000;
+/** Deterministic round-robin over SYNC_DAYS, starting from the current day;
+ * skips con dates that have already passed (ET) so no tick is wasted on
+ * frozen history. Returns [] once every day is behind us. */
+export function nextSyncDays(now: Date): string[] {
+  let etMonth = now.getUTCMonth() + 1;
+  let etDay = now.getUTCDate();
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      month: "numeric",
+      day: "numeric",
+    }).formatToParts(now);
+    const pick = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? NaN);
+    etMonth = pick("month");
+    etDay = pick("day");
+  } catch {
+    // fall back to UTC components
+  }
+
+  const isFuture = (param: string) => {
+    const n = Number(param.slice(-1));
+    if (etMonth < 9) return true;
+    if (etMonth > 9) return false;
+    return n >= etDay;
+  };
+
+  const startIdx = Math.floor(now.getTime() / CYCLE_MS) % SYNC_DAYS.length;
+  for (let off = 0; off < SYNC_DAYS.length; off++) {
+    const candidate = SYNC_DAYS[(startIdx + off) % SYNC_DAYS.length];
+    if (isFuture(candidate)) return [candidate];
+  }
+  return [];
+}
 
 export function isWithinActiveWindow(date: Date = new Date()): boolean {
   const year = date.getUTCFullYear();
@@ -28,11 +68,27 @@ export default defineScheduled(async (controller, _env, _ctx) => {
     return;
   }
 
+  const days = nextSyncDays(now);
+  if (days.length === 0) {
+    console.log(
+      `[Cron:sync-schedule] All con days have passed; nothing left to sync (${now.toISOString()})`,
+    );
+    return;
+  }
   const startTime = Date.now();
-  console.log(`[Cron:sync-schedule] Starting scheduled sync at ${now.toISOString()} (cron: ${controller.cron})`);
+  console.log(
+    `[Cron:sync-schedule] Starting scheduled sync at ${now.toISOString()} (cron: ${controller.cron}, day: ${days.join(", ")})`,
+  );
 
   try {
-    const result = await runIngestionWithRunLog({ mode: "sync" });
+    const result = await runIngestionWithRunLog({
+      mode: "sync",
+      days,
+      // Dedicated invocation for one con day (largest seen: ~650 events), so
+      // raise its cap under the wrangler.jsonc subrequests=2000 ceiling
+      // instead of inheriting the conservative cross-day default of 400.
+      maxDetailFetches: 1900,
+    });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(

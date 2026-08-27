@@ -1,6 +1,14 @@
 import * as cheerio from "cheerio";
-import { and, db, eq } from "void/db";
+import type { InferInsertModel } from "drizzle-orm";
+import { and, db, eq, inArray } from "void/db";
 import { eventChanges, events, ingestionRuns } from "../db/schema.ts";
+
+
+
+// Rows buffered per multi-row D1 statement while flushing a parsed day.
+// Keeps a full con-scale day (~hundreds of new events) well inside the
+// Workers subrequest ceiling instead of 1-3 statements per event.
+const WRITE_CHUNK = 50;
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
@@ -21,6 +29,8 @@ export interface IngestOptions {
   maxDetailFetches?: number;
   mode?: "sync" | "dry-run" | "hard-resync";
   onProgress?: (msg: string) => void;
+  /** Injectable clock for the past-day filter; defaults to the real time. */
+  now?: Date;
 }
 
 export interface IngestDiffSummary {
@@ -129,7 +139,6 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     if (options.onProgress) options.onProgress(msg);
   };
 
-  log(`Starting Dragon Con 2026 schedule ingestion (mode: ${mode})...`);
 
   let createdCount = 0;
   let updatedCount = 0;
@@ -142,17 +151,90 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     deletedEvents: [],
   };
 
-  const daysToFetch =
-    options.days && options.days.length > 0
-      ? options.days
-      : ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"];
+  // Upstream's view_by_day endpoint only accepts date params of the form
+  // `Sep++N` (double space, URL-encoded). Map human weekday labels — e.g.
+  // the admin dashboard's filter chips — onto that contract; canonical
+  // params and synthetic test days pass through untouched.
+  const WEEKDAY_TO_DAY_PARAM: Record<string, string> = {
+    Wednesday: "Sep++2",
+    Thursday: "Sep++3",
+    Friday: "Sep++4",
+    Saturday: "Sep++5",
+    Sunday: "Sep++6",
+    Monday: "Sep++7",
+    Tuesday: "Sep++8",
+  };
+
+  // Upstream days live in the September 2026 con window. Filter *default*
+  // expansions down to today-or-later ET so passed days stop costing
+  // budget. Explicit `days:` lists always win -- operators may deliberately
+  // re-pull a past day (e.g. hard-resync archaeology).
+  function conDateInET(now: Date): { month: number; day: number } {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        month: "numeric",
+        day: "numeric",
+      }).formatToParts(now);
+      const pick = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? NaN);
+      return { month: pick("month"), day: pick("day") };
+    } catch {
+      return { month: now.getUTCMonth() + 1, day: now.getUTCDate() };
+    }
+  }
+
+  function isFutureConDayParam(dayParam: string, now: Date): boolean {
+    const match = /^Sep\+\+(\d)$/.exec(dayParam);
+    if (!match) return true; // unknown/synthetic params are never auto-skipped
+    const { month, day } = conDateInET(now);
+    if (month < 9) return true; // before September: entire con still ahead
+    if (month > 9) return false; // after September: con finished
+    return Number(match[1]) >= day; // today itself stays live until midnight ET
+  }
+
+  const hasExplicitDays = Boolean(options.days && options.days.length > 0);
+  const clock = options.now ?? new Date();
+  if (!hasExplicitDays && mode !== "hard-resync") {
+    const skippedPastDays = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"].filter(
+      (d) => !isFutureConDayParam(d, clock),
+    );
+    if (skippedPastDays.length > 0) {
+      log(`Skipping already-passed con day(s): ${skippedPastDays.join(", ")}`);
+    }
+  }
+  const allConDayParams = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"];
+  const resolvedDefaults =
+    mode === "hard-resync"
+      ? allConDayParams // hard-resync means exactly that -- re-pull everything
+      : allConDayParams.filter((d) => isFutureConDayParam(d, clock));
+  const daysToFetch = (options.days && options.days.length > 0
+    ? options.days
+    : resolvedDefaults
+  ).map((day) => WEEKDAY_TO_DAY_PARAM[day] ?? day);
 
   // Shared across every day below (not reset per day) so a multi-day sync
   // can never exceed the invocation's subrequest budget.
   let detailFetchBudget = options.maxDetailFetches ?? DEFAULT_DETAIL_FETCH_BUDGET;
 
+  log(
+    `Starting Dragon Con 2026 schedule ingestion (mode: ${mode}, days: ${daysToFetch.join(", ")}, detail budget: ${detailFetchBudget})...`,
+  );
+
   const scrapedEventIds = new Set<string>();
 
+
+  // Phase 1 — fetch and parse every requested day listing up front so the
+  // run can process days smallest-first. A fixed order let early days
+  // consume the shared detail budget and starve whichever days came later
+  // (this is how Saturday/Sunday ended up with 6 events while Friday had
+  // 271); ordering ascending guarantees every smaller day *completes* and
+  // any shortfall lands entirely on the largest, explicitly-truncated day.
+  interface DayListing {
+    dayParam: string;
+    dayHeader: string;
+    eventLinks: { id: string; title: string; timeStr: string; href: string }[];
+  }
+  const fetchedListings: DayListing[] = [];
   for (const dayParam of daysToFetch) {
     const dayUrl = `${BASE_URL}/events/view_by_day?day=${dayParam}`;
     log(`Fetching day listing: ${dayParam}...`);
@@ -179,7 +261,6 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       $(".section_header.alt").first().text().trim() || dayParam.replace(/\+/g, " ");
 
     const eventLinks: { id: string; title: string; timeStr: string; href: string }[] = [];
-
     $(".redux_list_item").each((_, el) => {
       const link = $(el).find("a.object_link");
       const href = link.attr("href");
@@ -196,21 +277,41 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       }
     });
 
+    fetchedListings.push({ dayParam, dayHeader, eventLinks });
+  }
+
+  // Phase 2 — smallest listing first, ties in request order (stable sort).
+  const orderedListings = [...fetchedListings].sort(
+    (a, b) => a.eventLinks.length - b.eventLinks.length,
+  );
+  if (orderedListings.length > 1) {
+    log(
+      `Processing order (smallest-first): ${orderedListings
+        .map((d) => `${d.dayHeader}(${d.eventLinks.length})`)
+        .join(", ")}`,
+    );
+  }
+
+  for (const { dayParam, dayHeader, eventLinks } of orderedListings) {
     log(`Found ${eventLinks.length} events for day ${dayHeader}`);
 
     const scrapedIdsForDay = new Set<string>();
+    const dayStartScraped = scrapedEventIds.size;
+    const dayStartCreated = createdCount;
+    const dayStartUpdated = updatedCount;
+    const dayStartDeleted = deletedCount;
 
-    const limit = Math.max(0, detailFetchBudget);
-    const targets = eventLinks.slice(0, limit);
-    const truncated = targets.length !== eventLinks.length;
-    detailFetchBudget -= targets.length;
+    // The budget bounds *detail fetches only* and may run out mid-listing;
+    // walking past the cap marks the day truncated (which safely skips the
+    // deletion scan) instead of silently starving whichever days come later.
+    let truncated = false;
 
     // Scrape and parse every targeted event's detail page into memory
     // first. The hard-resync day reset below only runs after this loop
     // completes, so a handful of failed detail fetches (or a crash
     // mid-scrape) can never wipe rows we have no replacement data for.
     const parsedItems: Array<{
-      item: (typeof targets)[number];
+      item: (typeof eventLinks)[number];
       location: string;
       description: string;
       track: string;
@@ -222,7 +323,15 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       contentHash: string;
     }> = [];
 
-    for (const item of targets) {
+    for (const item of eventLinks) {
+      if (detailFetchBudget <= 0) {
+        truncated = true;
+        log(
+          `Detail-fetch budget exhausted inside ${dayHeader}: ${scrapedIdsForDay.size}/${eventLinks.length} events fetched; marking day truncated (deletion scan skipped).`,
+        );
+        break;
+      }
+      detailFetchBudget--;
       scrapedEventIds.add(item.id);
       scrapedIdsForDay.add(item.id);
       const detailUrl = `${BASE_URL}/event/${item.id}`;
@@ -328,17 +437,32 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       }
     }
 
+    // Pre-read every existing row for this day's parsed batch in a handful
+    // of chunked IN() statements instead of one SELECT per event.
+    const existingById = new Map<string, typeof events.$inferSelect>();
+    if (!isHardResync) {
+      for (let i = 0; i < parsedItems.length; i += WRITE_CHUNK) {
+        const ids = parsedItems.slice(i, i + WRITE_CHUNK).map((p) => p.item.id);
+        const rows = await db.select().from(events).where(inArray(events.id, ids));
+        for (const row of rows) existingById.set(row.id, row);
+      }
+    }
+
+    type NewEventRow = InferInsertModel<typeof events>;
+    type NewChangeRow = InferInsertModel<typeof eventChanges>;
+    const pendingCreates: Array<{ event: NewEventRow; change: NewChangeRow }> = [];
+    const rehashRows: Array<{ id: string; contentHash: string }> = [];
+    const touchIds: string[] = [];
+
     for (const parsed of parsedItems) {
       try {
         const { item, location, description, track, speakersJson, startsAt, endsAt, durationMinutes, contentHash } =
           parsed;
 
         // hard-resync already wiped this day's parsed rows above, so
-        // `existing` naturally comes back empty and every item takes the
+        // `existing` naturally stays missing and every item takes the
         // create path.
-        const existing = isHardResync
-          ? undefined
-          : (await db.select().from(events).where(eq(events.id, item.id)))[0];
+        const existing = existingById.get(item.id);
 
         const now = new Date().toISOString();
 
@@ -353,30 +477,31 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
           log(`[CREATE] ${item.title}`);
 
           if (!isDryRun) {
-            await db.insert(events).values({
-              id: item.id,
-              title: item.title,
-              description,
-              location,
-              track,
-              startsAt,
-              endsAt,
-              durationMinutes,
-              day: dayHeader,
-              timeString: item.timeStr,
-              speakers: speakersJson,
-              contentHash,
-              firstSeenAt: now,
-              lastSeenAt: now,
-              isDeleted: 0,
-            });
-
-            await db.insert(eventChanges).values({
-              eventId: item.id,
-              eventTitle: item.title,
-              changeType: isHardResync ? "hard-resync" : "created",
-              diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
-              detectedAt: now,
+            pendingCreates.push({
+              event: {
+                id: item.id,
+                title: item.title,
+                description,
+                location,
+                track,
+                startsAt,
+                endsAt,
+                durationMinutes,
+                day: dayHeader,
+                timeString: item.timeStr,
+                speakers: speakersJson,
+                contentHash,
+                firstSeenAt: now,
+                lastSeenAt: now,
+                isDeleted: 0,
+              },
+              change: {
+                eventId: item.id,
+                eventTitle: item.title,
+                changeType: isHardResync ? "hard-resync" : "created",
+                diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
+                detectedAt: now,
+              },
             });
           }
         } else {
@@ -403,10 +528,7 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
               // refresh lastSeenAt and persist the freshly computed content
               // hash (it may have migrated even though visible fields didn't).
               if (!isDryRun) {
-                await db
-                  .update(events)
-                  .set({ contentHash, lastSeenAt: now, isDeleted: 0 })
-                  .where(eq(events.id, item.id));
+                rehashRows.push({ id: item.id, contentHash });
               }
             } else {
               const changeType = isUncancel ? "uncancelled" : "updated";
@@ -448,16 +570,47 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
               }
             }
           } else if (!isDryRun) {
-            await db
-              .update(events)
-              .set({ lastSeenAt: now, isDeleted: 0 })
-              .where(eq(events.id, item.id));
+            touchIds.push(item.id);
           }
         }
       } catch (e: unknown) {
         log(`Error writing event ${parsed.item.id} (${parsed.item.title}): ${e instanceof Error ? e.message : String(e)}`);
         errorCount++;
       }
+    }
+
+    // Flush buffered writes. Multi-row statements keep a full con-scale day
+    // inside the Workers subrequest ceiling; a failed chunk degrades to the
+    // legacy one-row-at-a-time path so per-event write isolation, error
+    // counts, and logs stay identical.
+    const flushedAt = new Date().toISOString();
+    for (let i = 0; i < pendingCreates.length; i += WRITE_CHUNK) {
+      const chunk = pendingCreates.slice(i, i + WRITE_CHUNK);
+      try {
+        await db.insert(events).values(chunk.map((c) => c.event));
+        await db.insert(eventChanges).values(chunk.map((c) => c.change));
+      } catch {
+        for (const c of chunk) {
+          try {
+            await db.insert(events).values(c.event);
+            await db.insert(eventChanges).values(c.change);
+          } catch (e: unknown) {
+            log(
+              `Error writing event ${String(c.event.id)} (${String(c.event.title)}): ${e instanceof Error ? e.message : String(e)}`,
+            );
+            errorCount++;
+          }
+        }
+      }
+    }
+    for (const row of rehashRows) {
+      await db.update(events).set({ contentHash: row.contentHash, lastSeenAt: flushedAt, isDeleted: 0 }).where(eq(events.id, row.id));
+    }
+    for (let i = 0; i < touchIds.length; i += WRITE_CHUNK) {
+      await db
+        .update(events)
+        .set({ lastSeenAt: flushedAt, isDeleted: 0 })
+        .where(inArray(events.id, touchIds.slice(i, i + WRITE_CHUNK)));
     }
 
     // sync/dry-run: anything previously tracked for this day that was not
@@ -490,6 +643,13 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
         }
       }
     }
+
+    log(
+      `[DAY SUMMARY] ${dayHeader} (${dayParam}): ${scrapedEventIds.size - dayStartScraped} detail fetches, ` +
+        `${createdCount - dayStartCreated} created, ${updatedCount - dayStartUpdated} updated, ` +
+        `${deletedCount - dayStartDeleted} deleted, budget left: ${Math.max(detailFetchBudget, 0)}` +
+        (truncated ? ", TRUNCATED" : ", complete"),
+    );
   }
 
   log(
