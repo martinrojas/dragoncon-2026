@@ -996,3 +996,69 @@ test("weekday day labels from the admin dashboard are normalized to upstream Sep
   assert.strictEqual(result.totalScraped, 1);
   assert.strictEqual(result.created, 1);
 });
+
+test("smaller days complete first so late days can never starve the budget", async () => {
+  const bigDay = "BigLateDay";
+  const bigDayParam = "biglateday";
+  const smallDay = "SmallEarlyDay";
+  const smallDayParam = "smallearlyday";
+
+  // Requested order is deliberately large-first; ascending processing must
+  // flip it. Six big items, two small items, shared budget of five: the
+  // small day completes (2 fetches, deletion scan runs), the big day takes
+  // the remaining three and is flagged truncated.
+  insertEvent({
+    id: "ffff1001",
+    title: "Stale Small Event",
+    day: smallDay,
+    location: "Loc S",
+    timeString: "Old Time S",
+    contentHash: "stale-order-1",
+  });
+
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${bigDayParam}`,
+    dayListingHtml(bigDay, [
+      { id: "ffff2001", title: "Big 1", timeStr: "TB1" },
+      { id: "ffff2002", title: "Big 2", timeStr: "TB2" },
+      { id: "ffff2003", title: "Big 3", timeStr: "TB3" },
+      { id: "ffff2004", title: "Big 4", timeStr: "TB4" },
+      { id: "ffff2005", title: "Big 5", timeStr: "TB5" },
+      { id: "ffff2006", title: "Big 6", timeStr: "TB6" },
+    ]),
+  );
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${smallDayParam}`,
+    dayListingHtml(smallDay, [
+      { id: "ffff3001", title: "Small New", timeStr: "TS1" },
+      { id: "ffff4001", title: "Small Kept", timeStr: "Old Time S" },
+    ]),
+  );
+  for (const id of ["ffff2001", "ffff2002", "ffff2003"]) {
+    routes.set(`${BASE_URL}/event/${id}`, detailHtml({ location: `Loc ${id}`, description: "D" }));
+  }
+  for (const id of ["ffff3001", "ffff4001"]) {
+    routes.set(`${BASE_URL}/event/${id}`, detailHtml({ location: `Loc ${id}`, description: "D" }));
+  }
+  routes.set(
+    `${BASE_URL}/event/ffff4001`,
+    detailHtml({ location: "Loc S", description: "", dateStr: "", durationStr: "" }),
+  );
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () =>
+      runIngestion({ mode: "sync", days: [bigDayParam, smallDayParam], maxDetailFetches: 5 }),
+    ),
+  );
+
+  // Small day fully processed, including its deletion scan.
+  assert.strictEqual(getEvent("ffff3001")?.title, "Small New");
+  assert.strictEqual(result.log.some((l) => l.includes("[DELETE] Stale Small Event")), true);
+  // Big day consumed exactly the leftover budget and was marked truncated.
+  assert.strictEqual(getEvent("ffff4001")?.title, "Small Kept");
+  assert.strictEqual(result.created, 5); // ffff3001 + ffff4001 + ffff2001..2003
+  assert.strictEqual(result.totalScraped, 5);
+  assert.ok(result.log.some((l) => l.includes("budget exhausted inside BigLateDay")));
+  assert.ok(result.log.some((l) => l.includes("Processing order (smallest-first): SmallEarlyDay(2), BigLateDay(6)")));
+});

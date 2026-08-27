@@ -111,7 +111,9 @@ export default function AdminPage(props: Props) {
   // Controls state
   const [syncMode, setSyncMode] = useState<"sync" | "dry-run" | "hard-resync">("sync");
   const [selectedDays, setSelectedDays] = useState<string[]>(["All"]);
-  const [throttleLimit, setThrottleLimit] = useState<number | undefined>(undefined);
+  // Sized for the largest single con day (~650 upstream events) under the
+  // Workers subrequests=2000 ceiling; still user-throttleable per run.
+  const [throttleLimit, setThrottleLimit] = useState<number | undefined>(1900);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showHardResyncModal, setShowHardResyncModal] = useState(false);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);

@@ -137,7 +137,6 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     if (options.onProgress) options.onProgress(msg);
   };
 
-  log(`Starting Dragon Con 2026 schedule ingestion (mode: ${mode})...`);
 
   let createdCount = 0;
   let updatedCount = 0;
@@ -173,8 +172,25 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
   // can never exceed the invocation's subrequest budget.
   let detailFetchBudget = options.maxDetailFetches ?? DEFAULT_DETAIL_FETCH_BUDGET;
 
+  log(
+    `Starting Dragon Con 2026 schedule ingestion (mode: ${mode}, days: ${daysToFetch.join(", ")}, detail budget: ${detailFetchBudget})...`,
+  );
+
   const scrapedEventIds = new Set<string>();
 
+
+  // Phase 1 — fetch and parse every requested day listing up front so the
+  // run can process days smallest-first. A fixed order let early days
+  // consume the shared detail budget and starve whichever days came later
+  // (this is how Saturday/Sunday ended up with 6 events while Friday had
+  // 271); ordering ascending guarantees every smaller day *completes* and
+  // any shortfall lands entirely on the largest, explicitly-truncated day.
+  interface DayListing {
+    dayParam: string;
+    dayHeader: string;
+    eventLinks: { id: string; title: string; timeStr: string; href: string }[];
+  }
+  const fetchedListings: DayListing[] = [];
   for (const dayParam of daysToFetch) {
     const dayUrl = `${BASE_URL}/events/view_by_day?day=${dayParam}`;
     log(`Fetching day listing: ${dayParam}...`);
@@ -201,7 +217,6 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       $(".section_header.alt").first().text().trim() || dayParam.replace(/\+/g, " ");
 
     const eventLinks: { id: string; title: string; timeStr: string; href: string }[] = [];
-
     $(".redux_list_item").each((_, el) => {
       const link = $(el).find("a.object_link");
       const href = link.attr("href");
@@ -218,9 +233,29 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       }
     });
 
+    fetchedListings.push({ dayParam, dayHeader, eventLinks });
+  }
+
+  // Phase 2 — smallest listing first, ties in request order (stable sort).
+  const orderedListings = [...fetchedListings].sort(
+    (a, b) => a.eventLinks.length - b.eventLinks.length,
+  );
+  if (orderedListings.length > 1) {
+    log(
+      `Processing order (smallest-first): ${orderedListings
+        .map((d) => `${d.dayHeader}(${d.eventLinks.length})`)
+        .join(", ")}`,
+    );
+  }
+
+  for (const { dayParam, dayHeader, eventLinks } of orderedListings) {
     log(`Found ${eventLinks.length} events for day ${dayHeader}`);
 
     const scrapedIdsForDay = new Set<string>();
+    const dayStartScraped = scrapedEventIds.size;
+    const dayStartCreated = createdCount;
+    const dayStartUpdated = updatedCount;
+    const dayStartDeleted = deletedCount;
 
     // The budget bounds *detail fetches only* and may run out mid-listing;
     // walking past the cap marks the day truncated (which safely skips the
@@ -247,6 +282,9 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     for (const item of eventLinks) {
       if (detailFetchBudget <= 0) {
         truncated = true;
+        log(
+          `Detail-fetch budget exhausted inside ${dayHeader}: ${scrapedIdsForDay.size}/${eventLinks.length} events fetched; marking day truncated (deletion scan skipped).`,
+        );
         break;
       }
       detailFetchBudget--;
@@ -561,6 +599,13 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
         }
       }
     }
+
+    log(
+      `[DAY SUMMARY] ${dayHeader} (${dayParam}): ${scrapedEventIds.size - dayStartScraped} detail fetches, ` +
+        `${createdCount - dayStartCreated} created, ${updatedCount - dayStartUpdated} updated, ` +
+        `${deletedCount - dayStartDeleted} deleted, budget left: ${Math.max(detailFetchBudget, 0)}` +
+        (truncated ? ", TRUNCATED" : ", complete"),
+    );
   }
 
   log(
