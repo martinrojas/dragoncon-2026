@@ -1,6 +1,14 @@
 import * as cheerio from "cheerio";
-import { and, db, eq } from "void/db";
+import type { InferInsertModel } from "drizzle-orm";
+import { and, db, eq, inArray } from "void/db";
 import { eventChanges, events, ingestionRuns } from "../db/schema.ts";
+
+
+
+// Rows buffered per multi-row D1 statement while flushing a parsed day.
+// Keeps a full con-scale day (~hundreds of new events) well inside the
+// Workers subrequest ceiling instead of 1-3 statements per event.
+const WRITE_CHUNK = 50;
 
 const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
@@ -200,17 +208,17 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
 
     const scrapedIdsForDay = new Set<string>();
 
-    const limit = Math.max(0, detailFetchBudget);
-    const targets = eventLinks.slice(0, limit);
-    const truncated = targets.length !== eventLinks.length;
-    detailFetchBudget -= targets.length;
+    // The budget bounds *detail fetches only* and may run out mid-listing;
+    // walking past the cap marks the day truncated (which safely skips the
+    // deletion scan) instead of silently starving whichever days come later.
+    let truncated = false;
 
     // Scrape and parse every targeted event's detail page into memory
     // first. The hard-resync day reset below only runs after this loop
     // completes, so a handful of failed detail fetches (or a crash
     // mid-scrape) can never wipe rows we have no replacement data for.
     const parsedItems: Array<{
-      item: (typeof targets)[number];
+      item: (typeof eventLinks)[number];
       location: string;
       description: string;
       track: string;
@@ -222,7 +230,12 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       contentHash: string;
     }> = [];
 
-    for (const item of targets) {
+    for (const item of eventLinks) {
+      if (detailFetchBudget <= 0) {
+        truncated = true;
+        break;
+      }
+      detailFetchBudget--;
       scrapedEventIds.add(item.id);
       scrapedIdsForDay.add(item.id);
       const detailUrl = `${BASE_URL}/event/${item.id}`;
@@ -328,17 +341,32 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       }
     }
 
+    // Pre-read every existing row for this day's parsed batch in a handful
+    // of chunked IN() statements instead of one SELECT per event.
+    const existingById = new Map<string, typeof events.$inferSelect>();
+    if (!isHardResync) {
+      for (let i = 0; i < parsedItems.length; i += WRITE_CHUNK) {
+        const ids = parsedItems.slice(i, i + WRITE_CHUNK).map((p) => p.item.id);
+        const rows = await db.select().from(events).where(inArray(events.id, ids));
+        for (const row of rows) existingById.set(row.id, row);
+      }
+    }
+
+    type NewEventRow = InferInsertModel<typeof events>;
+    type NewChangeRow = InferInsertModel<typeof eventChanges>;
+    const pendingCreates: Array<{ event: NewEventRow; change: NewChangeRow }> = [];
+    const rehashRows: Array<{ id: string; contentHash: string }> = [];
+    const touchIds: string[] = [];
+
     for (const parsed of parsedItems) {
       try {
         const { item, location, description, track, speakersJson, startsAt, endsAt, durationMinutes, contentHash } =
           parsed;
 
         // hard-resync already wiped this day's parsed rows above, so
-        // `existing` naturally comes back empty and every item takes the
+        // `existing` naturally stays missing and every item takes the
         // create path.
-        const existing = isHardResync
-          ? undefined
-          : (await db.select().from(events).where(eq(events.id, item.id)))[0];
+        const existing = existingById.get(item.id);
 
         const now = new Date().toISOString();
 
@@ -353,30 +381,31 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
           log(`[CREATE] ${item.title}`);
 
           if (!isDryRun) {
-            await db.insert(events).values({
-              id: item.id,
-              title: item.title,
-              description,
-              location,
-              track,
-              startsAt,
-              endsAt,
-              durationMinutes,
-              day: dayHeader,
-              timeString: item.timeStr,
-              speakers: speakersJson,
-              contentHash,
-              firstSeenAt: now,
-              lastSeenAt: now,
-              isDeleted: 0,
-            });
-
-            await db.insert(eventChanges).values({
-              eventId: item.id,
-              eventTitle: item.title,
-              changeType: isHardResync ? "hard-resync" : "created",
-              diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
-              detectedAt: now,
+            pendingCreates.push({
+              event: {
+                id: item.id,
+                title: item.title,
+                description,
+                location,
+                track,
+                startsAt,
+                endsAt,
+                durationMinutes,
+                day: dayHeader,
+                timeString: item.timeStr,
+                speakers: speakersJson,
+                contentHash,
+                firstSeenAt: now,
+                lastSeenAt: now,
+                isDeleted: 0,
+              },
+              change: {
+                eventId: item.id,
+                eventTitle: item.title,
+                changeType: isHardResync ? "hard-resync" : "created",
+                diffDetails: JSON.stringify({ location, track, startsAt, endsAt }),
+                detectedAt: now,
+              },
             });
           }
         } else {
@@ -403,10 +432,7 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
               // refresh lastSeenAt and persist the freshly computed content
               // hash (it may have migrated even though visible fields didn't).
               if (!isDryRun) {
-                await db
-                  .update(events)
-                  .set({ contentHash, lastSeenAt: now, isDeleted: 0 })
-                  .where(eq(events.id, item.id));
+                rehashRows.push({ id: item.id, contentHash });
               }
             } else {
               const changeType = isUncancel ? "uncancelled" : "updated";
@@ -448,16 +474,47 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
               }
             }
           } else if (!isDryRun) {
-            await db
-              .update(events)
-              .set({ lastSeenAt: now, isDeleted: 0 })
-              .where(eq(events.id, item.id));
+            touchIds.push(item.id);
           }
         }
       } catch (e: unknown) {
         log(`Error writing event ${parsed.item.id} (${parsed.item.title}): ${e instanceof Error ? e.message : String(e)}`);
         errorCount++;
       }
+    }
+
+    // Flush buffered writes. Multi-row statements keep a full con-scale day
+    // inside the Workers subrequest ceiling; a failed chunk degrades to the
+    // legacy one-row-at-a-time path so per-event write isolation, error
+    // counts, and logs stay identical.
+    const flushedAt = new Date().toISOString();
+    for (let i = 0; i < pendingCreates.length; i += WRITE_CHUNK) {
+      const chunk = pendingCreates.slice(i, i + WRITE_CHUNK);
+      try {
+        await db.insert(events).values(chunk.map((c) => c.event));
+        await db.insert(eventChanges).values(chunk.map((c) => c.change));
+      } catch {
+        for (const c of chunk) {
+          try {
+            await db.insert(events).values(c.event);
+            await db.insert(eventChanges).values(c.change);
+          } catch (e: unknown) {
+            log(
+              `Error writing event ${String(c.event.id)} (${String(c.event.title)}): ${e instanceof Error ? e.message : String(e)}`,
+            );
+            errorCount++;
+          }
+        }
+      }
+    }
+    for (const row of rehashRows) {
+      await db.update(events).set({ contentHash: row.contentHash, lastSeenAt: flushedAt, isDeleted: 0 }).where(eq(events.id, row.id));
+    }
+    for (let i = 0; i < touchIds.length; i += WRITE_CHUNK) {
+      await db
+        .update(events)
+        .set({ lastSeenAt: flushedAt, isDeleted: 0 })
+        .where(inArray(events.id, touchIds.slice(i, i + WRITE_CHUNK)));
     }
 
     // sync/dry-run: anything previously tracked for this day that was not

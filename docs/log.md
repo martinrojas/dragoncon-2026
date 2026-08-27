@@ -3,6 +3,18 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-26 — Fix Weekend Schedule Starvation (Per-Day Cron Rotation + Batched Writes)
+
+- **Type:** Bug fix (data completeness — upstream events never ingested).
+- **Symptom:** Production D1 held only 6 Saturday / 6 Sunday events while upstream (`app.core-apps.com/dragoncon26`) lists hundreds each; Friday 271 / Thursday 129 looked healthy.
+- **Root cause:** `runIngestion()` spent its shared `DEFAULT_DETAIL_FETCH_BUDGET` (400) sequentially in fixed day order Wed→Tue, charging full price even for unchanged events (1 detail fetch + 1 SELECT + 2 writes *every run*). Wednesday(4)+Thursday(129) left 267; Friday alone wanted 271 — the budget died mid-Friday and `eventLinks.slice(0, 0)` handed Saturday/Sunday/Monday/Tuesday zero attempts every tick. Their stray rows date from the first runs (Aug 23) before Thu/Fri were published upstream.
+- **Changes:**
+  - `crons/sync-schedule.ts`: cron now ingests **one con day per invocation** via deterministic `nextSyncDays()` round-robin over `SYNC_DAYS` — each tick gets the Worker's entire subrequest budget instead of splitting it seven ways. Active-window guard and `ingestion_runs` history unchanged. Admin `POST /api/ingest` still accepts explicit `days` for immediate manual bursts.
+  - `lib/ingest.ts`: day listings are walked to exhaustion instead of blind-sliced (budget caps detail fetches, `truncated` still suppresses the deletion scan); existing rows pre-read in chunked `IN()` statements; creates flush as multi-row inserts with **per-row replay fallback** so the write-isolation guarantee survives a poisoned row byte-for-byte; lastSeen refreshes batch into one bulk UPDATE. A 120-event day drops from 361 D1 statements to double digits.
+  - `tests/`: new op-ceiling regression test (asserts <200 statements for 120 fresh events), rotation cycle test, cron-window test re-derived from `nextSyncDays` fixtures.
+- **Verification:** 104/104 tests green, production build clean. Con-scale arithmetic: worst-day backfill ≈ details + ~15 D1 statements, far inside the configured 2000-subrequest ceiling; manual rescue of specific days available immediately post-deploy via admin ingest with `{"days":["Sep++5"]}`.
+
+---
 ## 2026-08-26 — Fix First-Load Stale Schedule (SW Network-First + Full SSR Payload)
 
 - **Type:** Bug fix (correctness — stale data shown as fresh).

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { withRuntimeEnv } from "void/_env";
 import { computeContentHash, runIngestionWithRunLog } from "../lib/ingest.ts";
-import cronHandler, { cron, isWithinActiveWindow } from "../crons/sync-schedule.ts";
+import cronHandler, { cron, isWithinActiveWindow, nextSyncDays, SYNC_DAYS } from "../crons/sync-schedule.ts";
 
 interface FakeD1BoundStatement {
   raw(): unknown[][];
@@ -157,13 +157,17 @@ test("cron handler executes runIngestion when within active window", async () =>
   };
 
   try {
-    // Mock upstream Dragon Con HTML responses for 1 day
+    // Mock upstream Dragon Con HTML responses for whichever con day this
+    // deterministic tick rotates to.
+    const tickNow = new Date("2026-09-03T14:00:00Z");
+    const [rotDay] = nextSyncDays(tickNow);
+    const rotDayHeader = `${rotDay.replace(/\+\+/g, "  ")} (rotation fixture)`;
     globalThis.fetch = async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("Sep++3")) {
+      if (url.includes(rotDay)) {
         return new Response(
           `<html><body>
-            <div class="section_header alt">Thursday, Sep 3</div>
+            <div class="section_header alt">${rotDayHeader}</div>
             <div class="redux_list_item">
               <a class="object_link" href="/dragoncon26/event/101ab">
                 <span class="line one">Cron Job Workshop</span>
@@ -270,4 +274,21 @@ test("runIngestionWithRunLog marks the run failed when ingestion throws", async 
     assert.strictEqual(failedRows.length, 1, "Failed ingestion should be recorded exactly once");
     assert.strictEqual(failedRows[0].error_message, "boom");
   });
+});
+
+// ---------------------------------------------------------------------------
+// Fix Round: one con day per tick (per-invocation subrequest budgets)
+// ---------------------------------------------------------------------------
+
+test("nextSyncDays rotates through every con day deterministically", () => {
+  const start = new Date("2026-08-24T00:00:00Z").getTime();
+  const picks = Array.from({ length: SYNC_DAYS.length * 2 }, (_, i) => nextSyncDays(new Date(start + i * 4 * 60 * 60 * 1000))[0]);
+
+  assert.strictEqual(picks.length, SYNC_DAYS.length * 2);
+  for (let i = 0; i < SYNC_DAYS.length; i++) {
+    assert.strictEqual(picks[i], picks[i + SYNC_DAYS.length], "cycle must repeat with period SYNC_DAYS");
+  }
+  for (const day of SYNC_DAYS) {
+    assert.ok(picks.includes(day), `${day} should be covered each cycle`);
+  }
 });

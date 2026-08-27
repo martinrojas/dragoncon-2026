@@ -150,7 +150,7 @@ The Free plan's 50-subrequest-per-invocation ceiling is too low for a full sched
 ```jsonc
 "limits": {
   "cpu_ms": 10000,     // 10s ceiling per invocation (Paid default is 30s)
-  "subrequests": 2000  // covers a multi-day sync; Paid default is 10,000
+  "subrequests": 2000  // one con day per cron tick; a full manual multi-day sync also fits. Paid default is 10,000
 }
 ```
 

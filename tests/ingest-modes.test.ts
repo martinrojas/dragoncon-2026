@@ -931,3 +931,48 @@ test("sync mode applies a safe default detail-fetch budget when maxDetailFetches
   assert.strictEqual(result.totalScraped, DEFAULT_DETAIL_FETCH_BUDGET);
   assert.strictEqual(result.created, 0);
 });
+// ---------------------------------------------------------------------------
+// Fix Round 2: full-day ingestion must stay far below per-invocation
+// subrequest ceilings (D1 statements + HTTP detail fetches), so a single
+// big day can complete inside one Worker invocation.
+// ---------------------------------------------------------------------------
+
+test("full-day ingestion of 120 fresh events keeps D1 statement count low", async () => {
+  const day = "OpBudgetDay";
+  const dayParam = "opbudgetday";
+  const items = Array.from({ length: 120 }, (_, i) => ({
+    id: `dddd${String(i).padStart(8, "0")}`,
+    title: `Fresh Event ${i}`,
+    timeStr: `Time ${i}`,
+  }));
+
+  const routes = new Map<string, string>();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  for (const item of items) {
+    routes.set(
+      `${BASE_URL}/event/${item.id}`,
+      detailHtml({ location: `Loc ${item.id}`, description: `Desc ${item.id}` }),
+    );
+  }
+
+  let dbStatements = 0;
+  const originalPrepare = sharedFakeD1.prepare;
+  sharedFakeD1.prepare = ((sqlText: string) => {
+    dbStatements++;
+    return originalPrepare(sqlText);
+  }) as typeof sharedFakeD1.prepare;
+
+  try {
+    const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    );
+
+    assert.strictEqual(result.totalScraped, 120);
+    assert.strictEqual(result.created, 120);
+    // Batched reads/writes: chunked IN lookups + multi-row inserts must keep
+    // total D1 statements in the low dozens, not one-to-three per event.
+    assert.ok(dbStatements < 200, `expected <200 D1 statements, got ${dbStatements}`);
+  } finally {
+    sharedFakeD1.prepare = originalPrepare;
+  }
+});
