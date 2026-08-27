@@ -29,7 +29,9 @@ Scrape source: `https://app.core-apps.com/dragoncon26`.
 
 ## Observed day sizes (Sep 2026 con)
 
-Wed 4 · Thu 129 · Fri 271 · Sat 601 · Sun 637 · Mon/Tue small (inferred, not verified — from production ingestion logs) [^upstream-session]
+- Fri **~691 events** — operator-confirmed against production data [^upstream-session].
+- Wed 4 · Thu 129 · Sat 601 · Sun 637 · Mon/Tue small — read off production ingestion logs, *not* re-verified since; treat as order-of-magnitude only. An earlier revision of this doc recorded Friday as 271 from the same logs and was wrong, so the unconfirmed figures here may under-report too [^upstream-session].
+- Budget sizing therefore assumes a largest-day ceiling well above the biggest confirmed number; see `rules/ingestion-budget.md`.
 
 [^alias-map]: `lib/ingest.ts:158-167`
 [^alias-test]: `tests/ingest-modes.test.ts:980-998`

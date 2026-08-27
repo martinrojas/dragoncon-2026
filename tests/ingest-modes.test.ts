@@ -910,26 +910,40 @@ test("sync mode shares the detail-fetch budget across days instead of resetting 
   assert.strictEqual(getEvent("bbbb2002"), undefined);
 });
 
-test("sync mode applies a safe default detail-fetch budget when maxDetailFetches is omitted", async () => {
+test("the omitted-budget default is wired in and sized for the largest con day", async () => {
+  // Sizing: cron rotation gives one invocation one con day, so the default has
+  // to clear the biggest day (Friday ~691 events) or that day truncates and
+  // silently loses its deletion sweep. Upper bound keeps the run inside the
+  // Workers subrequests=2000 ceiling once batched D1 writes are counted.
+  assert.ok(
+    DEFAULT_DETAIL_FETCH_BUDGET >= 700,
+    `default budget ${DEFAULT_DETAIL_FETCH_BUDGET} cannot complete a ~691-event day`,
+  );
+  assert.ok(
+    DEFAULT_DETAIL_FETCH_BUDGET <= 1900,
+    `default budget ${DEFAULT_DETAIL_FETCH_BUDGET} risks the 2000-subrequest ceiling`,
+  );
+
+  // Wiring: omitting maxDetailFetches must fall back to the default, not to
+  // zero. Truncation *at* a budget is covered by the explicit-budget tests.
   const day = "DefaultBudgetDay";
   const dayParam = "defaultbudgetday";
-  const items = Array.from({ length: DEFAULT_DETAIL_FETCH_BUDGET + 25 }, (_, i) => ({
-    id: `cccc${String(i).padStart(8, "0")}`,
-    title: `Event ${i}`,
-    timeStr: `Time ${i}`,
-  }));
-
   const routes = new Map<string, string>();
-  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
-  // No detail routes mapped for any of them -- every detail fetch 404s and
-  // is skipped. This test only cares how many were attempted.
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${dayParam}`,
+    dayListingHtml(day, [
+      { id: "cccc00000001", title: "Default Budget Event 1", timeStr: "Time D1" },
+      { id: "cccc00000002", title: "Default Budget Event 2", timeStr: "Time D2" },
+    ]),
+  );
+  routes.set(`${BASE_URL}/event/cccc00000001`, detailHtml({ location: "Room D1", description: "Desc D1" }));
+  routes.set(`${BASE_URL}/event/cccc00000002`, detailHtml({ location: "Room D2", description: "Desc D2" }));
 
   const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
     withMockedFetch(routes, () => runIngestion({ mode: "dry-run", days: [dayParam] })),
   );
 
-  assert.strictEqual(result.totalScraped, DEFAULT_DETAIL_FETCH_BUDGET);
-  assert.strictEqual(result.created, 0);
+  assert.strictEqual(result.totalScraped, 2);
 });
 // ---------------------------------------------------------------------------
 // Fix Round 2: full-day ingestion must stay far below per-invocation

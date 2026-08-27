@@ -14,14 +14,17 @@ const BASE_URL = "https://app.core-apps.com/dragoncon26";
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-// Total event-detail fetches allowed across a whole `runIngestion` call
-// when the caller doesn't pass `maxDetailFetches`. Cloudflare enforces one
-// subrequest ceiling per Worker invocation (`limits.subrequests` in
-// wrangler.jsonc) shared by every fetch() and D1 call below; this default
-// keeps a full multi-day sync comfortably under the Workers Paid plan's
-// configured budget. Pass a larger `maxDetailFetches` explicitly (and raise
-// `limits.subrequests` to match) for a bigger one-shot run.
-export const DEFAULT_DETAIL_FETCH_BUDGET = 400;
+// Total event-detail fetches allowed across a whole `runIngestion` call when
+// the caller doesn't pass `maxDetailFetches`. Sized so the largest single con
+// day always completes in one invocation (Friday is ~691 events): cron
+// rotation gives each tick exactly one day, and a day that truncates loses
+// its deletion sweep, so an under-sized budget silently freezes removals.
+// Ceiling is the Workers per-invocation subrequest limit (`limits.subrequests`
+// = 2000 in wrangler.jsonc), shared by every fetch() and D1 call here; at
+// ~1.04 subrequests per event (writes are batched) 1800 stays inside it.
+// Multi-day one-shot runs may still truncate — smallest-first ordering keeps
+// the shortfall on the largest day.
+export const DEFAULT_DETAIL_FETCH_BUDGET = 1800;
 
 export interface IngestOptions {
   days?: string[];

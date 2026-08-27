@@ -96,10 +96,9 @@ export default defineScheduled(async (controller, _env, _ctx) => {
     const result = await runIngestionWithRunLog({
       mode: "sync",
       days,
-      // Dedicated invocation for one con day (largest seen: ~650 events), so
-      // raise its cap under the wrangler.jsonc subrequests=2000 ceiling
-      // instead of inheriting the conservative cross-day default of 400.
-      maxDetailFetches: 1900,
+      // Budget intentionally left at DEFAULT_DETAIL_FETCH_BUDGET: rotation
+      // gives this invocation a single con day, and the default is sized to
+      // cover the largest one under the wrangler subrequests ceiling.
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
