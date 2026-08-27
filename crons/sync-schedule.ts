@@ -3,8 +3,8 @@ import { runIngestionWithRunLog } from "../lib/ingest.ts";
 
 export const cron = [
   "0 */4 * 8 *", // Aug 24-31: every 4 hours
-  "0 */4 1-2 9 *", // Sep 1-2: every 4 hours
-  "*/30 * 3-7 9 *", // Sep 3-7 (Dragon Con): every 30 minutes
+  "0 */2 1-2 9 *", // Sep 1-2: every 2 hours
+  "*/10 * 3-7 9 *", // Sep 3-7 (Dragon Con): every 10 minutes
 ];
 
 // One con day per tick: each invocation gets the Worker's whole subrequest
