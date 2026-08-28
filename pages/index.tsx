@@ -7,6 +7,7 @@ import {
 } from "@simplewebauthn/browser";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from "react";
 import {
+  Badge,
   AppBar,
   DayStrip,
   Icon,
@@ -18,6 +19,7 @@ import {
 } from "../components/CyberDragonUi";
 import { PanelDetailModal } from "../components/PanelDetailModal";
 import { calculateWalkTime, parseTimeDisplay } from "../lib/walktime";
+import { shareLink } from "../lib/share";
 import { AppStoragePanel, type InstallPromptEvent } from "../components/AppStoragePanel";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -30,6 +32,7 @@ export interface User {
   username: string;
   name: string;
   role?: string;
+  shareSchedule?: number;
 }
 
 export interface EventItem {
@@ -200,6 +203,11 @@ export default function HomePage({
   const [selectedFriend, setSelectedFriend] = useState<User | null>(null);
   const [friendSharedEvents, setFriendSharedEvents] = useState<EventItem[]>([]);
   const [friendMsg, setFriendMsg] = useState("");
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+  const [friendEventsList, setFriendEventsList] = useState<EventItem[]>([]);
+  const [friendScheduleHidden, setFriendScheduleHidden] = useState(false);
+  const [friendViewMode, setFriendViewMode] = useState<"all" | "overlap">("all");
+  const [shareScheduleState, setShareScheduleState] = useState(true);
 
   // Ingestion Sync & Cache
   const [isSyncing, setIsSyncing] = useState(false);
@@ -225,6 +233,34 @@ export default function HomePage({
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Sync Squad privacy toggle state whenever the logged-in user changes
+  useEffect(() => {
+    setShareScheduleState(currentUser ? currentUser.shareSchedule !== 0 : true);
+  }, [currentUser]);
+
+  // Strip the ?event= deep-link param from the URL without a navigation/reload
+  const cleanEventUrlParam = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("event");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  };
+
+  // Strip the ?invite= deep-link param from the URL without a navigation/reload
+  const cleanInviteUrlParam = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("invite");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  };
+
+  // Clear a self-invite (user opened their own squad share link) and clean the URL
+  useEffect(() => {
+    if (currentUser && pendingInvite && pendingInvite.toLowerCase() === currentUser.username.toLowerCase()) {
+      setPendingInvite(null);
+      sessionStorage.removeItem("dc_pending_invite");
+      cleanInviteUrlParam();
+    }
+  }, [currentUser, pendingInvite]);
+
   // Initialize Auth & Settings
   useEffect(() => {
     setSupportsPasskeys(browserSupportsWebAuthn());
@@ -249,9 +285,9 @@ export default function HomePage({
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onAppInstalled);
 
-    // Cloudflare Web Analytics (SPA mode)
+    // Cloudflare Web Analytics (SPA mode) - only in production
     const cfBeaconToken = import.meta.env.VITE_CF_BEACON_TOKEN;
-    if (cfBeaconToken && !document.querySelector('script[src*="cloudflareinsights.com/beacon"]')) {
+    if (import.meta.env.PROD && cfBeaconToken && !document.querySelector('script[src*="cloudflareinsights.com/beacon"]')) {
       const script = document.createElement("script");
       script.type = "module";
       script.src = "https://static.cloudflareinsights.com/beacon.min.js";
@@ -299,6 +335,31 @@ export default function HomePage({
       }
       return null;
     }, APP_VERSION);
+
+    // Resolve ?event=<id> deep link by fetching the event and opening its detail modal
+    const eventParam = new URLSearchParams(window.location.search).get("event");
+    if (eventParam) {
+      fetch(`/api/events?id=${encodeURIComponent(eventParam)}`)
+        .then((res) => res.json())
+        .then((data: { success: boolean; event?: EventItem }) => {
+          if (data.success && data.event) {
+            setActiveDetailItem(data.event);
+          }
+        })
+        .catch(() => {
+          // ignore deep link resolution errors
+        });
+    }
+
+    // Resolve ?invite=<username> deep link, persisting across login/registration
+    const inviteParam = new URLSearchParams(window.location.search).get("invite");
+    if (inviteParam) {
+      sessionStorage.setItem("dc_pending_invite", inviteParam);
+      setPendingInvite(inviteParam);
+    } else {
+      const savedInvite = sessionStorage.getItem("dc_pending_invite");
+      if (savedInvite) setPendingInvite(savedInvite);
+    }
 
     return () => {
       cleanupErrorCatchers();
@@ -625,11 +686,21 @@ export default function HomePage({
   const handleCompareFriend = async (friend: User) => {
     if (!currentUser) return;
     setSelectedFriend(friend);
+    setFriendViewMode("all");
+    setFriendEventsList([]);
+    setFriendSharedEvents([]);
     try {
       const res = await fetch(`/api/friends?userId=${currentUser.id}&friendId=${friend.id}`);
-      const data = (await res.json()) as { success: boolean; sharedEvents: EventItem[] };
+      const data = (await res.json()) as {
+        success: boolean;
+        friendEvents?: EventItem[];
+        sharedEvents?: EventItem[];
+        scheduleHidden?: boolean;
+      };
       if (data.success) {
-        setFriendSharedEvents(data.sharedEvents);
+        setFriendEventsList(data.friendEvents || []);
+        setFriendSharedEvents(data.sharedEvents || []);
+        setFriendScheduleHidden(!!data.scheduleHidden);
       }
     } catch (e: unknown) {
       console.error(e);
@@ -663,6 +734,40 @@ export default function HomePage({
     } catch (e: unknown) {
       setFriendMsg("Network error adding friend");
     }
+  };
+
+  // Accept a pending squad invite from a shared link
+  const handleAcceptInvite = async () => {
+    if (!currentUser || !pendingInvite) return;
+    try {
+      const res = await fetch("/api/friends", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          friendUsername: pendingInvite,
+        }),
+      });
+      const data = (await res.json()) as { success: boolean; error?: string };
+      if (data.success) {
+        loadFriends(currentUser.id);
+        triggerToast("Squad member added!", "ok");
+      } else {
+        triggerToast(data.error || "Failed to add friend", "warn");
+      }
+    } catch (e: unknown) {
+      console.error("Failed to accept squad invite", e);
+    } finally {
+      setPendingInvite(null);
+      sessionStorage.removeItem("dc_pending_invite");
+      cleanInviteUrlParam();
+    }
+  };
+
+  const handleDismissInvite = () => {
+    setPendingInvite(null);
+    sessionStorage.removeItem("dc_pending_invite");
+    cleanInviteUrlParam();
   };
 
   // Check for App & Schedule Updates (non-destructive attendee fetch)
@@ -776,6 +881,34 @@ export default function HomePage({
     triggerToast("Signed out", "ok");
   };
 
+  // Toggle Squad schedule sharing privacy
+  const handleTogglePrivacy = async () => {
+    if (!currentUser) return;
+    const newValue = !shareScheduleState;
+    setShareScheduleState(newValue);
+    try {
+      const res = await fetch("/api/user/privacy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUser.id, shareSchedule: newValue }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; shareSchedule?: number; error?: string };
+      if (data.success) {
+        const updatedUser = { ...currentUser, shareSchedule: data.shareSchedule ?? (newValue ? 1 : 0) };
+        setCurrentUser(updatedUser);
+        localStorage.setItem("dc_user", JSON.stringify(updatedUser));
+        triggerToast(newValue ? "Full schedule shared with Squad" : "Schedule set to private (mutual overlap only)", "ok");
+      } else {
+        setShareScheduleState(!newValue);
+        triggerToast(data.error || "Failed to update privacy setting", "error");
+      }
+    } catch (e: unknown) {
+      console.error("Failed to update privacy setting", e);
+      setShareScheduleState(!newValue);
+      triggerToast("Network error updating privacy setting", "error");
+    }
+  };
+
   // Format Day Items for DayStrip (sorted chronologically by con date)
   // Format Day Items for DayStrip directly from server-driven days
   const formattedDays: DayItem[] = useMemo(() => {
@@ -860,6 +993,21 @@ export default function HomePage({
   // Conflict checker for any event ID
   const checkEventConflict = (eventId: string): boolean => {
     return agendaConflicts.some((c) => c.event1Id === eventId || c.event2Id === eventId);
+  };
+
+  // Conflict checker for a friend's event against the current user's own saved schedule
+  const checkFriendEventConflict = (ev: EventItem): boolean => {
+    if (!ev.startsAt || !ev.endsAt) return false;
+    const evStart = new Date(ev.startsAt).getTime();
+    const evEnd = new Date(ev.endsAt).getTime();
+    return agendaItems.some((item) => {
+      const other = item.event;
+      if (item.status !== "going" || !other || item.eventId === ev.id) return false;
+      if (other.day !== ev.day || !other.startsAt || !other.endsAt) return false;
+      const oStart = new Date(other.startsAt).getTime();
+      const oEnd = new Date(other.endsAt).getTime();
+      return evStart < oEnd && oStart < evEnd;
+    });
   };
 
   // Filter events according to smart checkboxes and segmented control
@@ -1018,6 +1166,52 @@ export default function HomePage({
             }}
           >
             {syncStatusMsg}
+          </div>
+        )}
+
+        {/* Squad Invite Banner (Logged In or Guest) */}
+        {pendingInvite && (!currentUser || pendingInvite.toLowerCase() !== currentUser.username.toLowerCase()) && (
+          <div style={{ padding: "12px var(--gutter) 0" }}>
+            <div
+              className="cd-glass-panel cd-notch"
+              style={{
+                maxWidth: 900,
+                margin: "0 auto",
+                padding: 16,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                borderColor: "var(--line-purple)",
+                background: "var(--surface-glass-strong)",
+              }}
+            >
+              <span style={{ font: "var(--type-body-sm)", color: "var(--text-primary)" }}>
+                ✨ <strong style={{ color: "var(--gold-500)" }}>@{pendingInvite}</strong> invited you to join their Dragon Con squad!
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                {currentUser ? (
+                  <button type="button" onClick={handleAcceptInvite} className="cd-btn cd-btn-primary">
+                    ✓ ADD TO SQUAD
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("register");
+                      setShowAuthModal(true);
+                    }}
+                    className="cd-btn cd-btn-signal"
+                  >
+                    ⚡ LOG IN / REGISTER
+                  </button>
+                )}
+                <button type="button" onClick={handleDismissInvite} className="cd-btn cd-btn-ghost">
+                  ✕ DISMISS
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1407,13 +1601,21 @@ export default function HomePage({
               {!currentUser ? (
                 <div className="cd-glass-panel" style={{ padding: 30, textAlign: "center" }}>
                   <h2 style={{ font: "var(--type-heading)", color: "var(--gold-500)", marginBottom: 8 }}>
-                    CONNECT WITH YOUR SQUAD
+                    {pendingInvite ? `@${pendingInvite.toUpperCase()} INVITED YOU TO SQUAD` : "CONNECT WITH YOUR SQUAD"}
                   </h2>
                   <p style={{ font: "var(--type-body)", color: "var(--text-secondary)", marginBottom: 16 }}>
-                    Add your con buddies by username to compare schedules and find shared panels.
+                    {pendingInvite
+                      ? `Connect with @${pendingInvite} on CyberDragon to compare panel schedules and coordinate con plans.`
+                      : "Add your con buddies by username to compare schedules and find shared panels."}
                   </p>
-                  <button onClick={() => setShowAuthModal(true)} className="cd-btn cd-btn-signal">
-                    LOG IN
+                  <button
+                    onClick={() => {
+                      if (pendingInvite) setAuthMode("register");
+                      setShowAuthModal(true);
+                    }}
+                    className="cd-btn cd-btn-signal"
+                  >
+                    {pendingInvite ? `✨ JOIN @${pendingInvite.toUpperCase()}'S SQUAD` : "LOG IN"}
                   </button>
                 </div>
               ) : (
@@ -1443,6 +1645,28 @@ export default function HomePage({
                       + ADD MEMBER
                     </button>
                   </form>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!currentUser) return;
+                      const displayName = currentUser.name?.trim() || `@${currentUser.username}`;
+                      const url = `${window.location.origin}/?invite=${encodeURIComponent(currentUser.username)}`;
+                      const res = await shareLink({
+                        title: "Join my CyberDragon Squad",
+                        text: `Join ${displayName}'s Dragon Con squad on CyberDragon!`,
+                        url,
+                      });
+                      if (res.copied) {
+                        setFriendMsg("Invite link copied to clipboard!");
+                        setTimeout(() => setFriendMsg(""), 3000);
+                      }
+                    }}
+                    className="cd-btn cd-btn-secondary"
+                    style={{ width: "100%", marginBottom: 16 }}
+                  >
+                    🔗 SHARE MY SQUAD INVITE LINK
+                  </button>
 
                   {friendMsg && (
                     <div style={{ marginBottom: 12, color: "var(--gold-500)", font: "var(--type-data)" }}>
@@ -1491,34 +1715,115 @@ export default function HomePage({
                     </div>
                   )}
 
-                  {/* Overlap View */}
+                  {/* Detailed Squad Schedule Browser */}
                   {selectedFriend && (
                     <div className="cd-glass-panel">
                       <span className="cd-label" style={{ display: "block", marginBottom: 12, color: "var(--gold-500)" }}>
-                        SHARED PANELS WITH {selectedFriend.name.toUpperCase()} ({friendSharedEvents.length})
+                        {selectedFriend.name.toUpperCase()}'S SCHEDULE
                       </span>
-                      {friendSharedEvents.length === 0 ? (
+
+                      {friendScheduleHidden ? (
+                        <div
+                          style={{
+                            padding: 10,
+                            marginBottom: 14,
+                            backgroundColor: "var(--surface-inset)",
+                            border: "1px solid var(--line-hairline)",
+                            borderRadius: "var(--r-control)",
+                            font: "var(--type-body-sm)",
+                            color: "var(--text-secondary)",
+                          }}
+                        >
+                          🔒 @{selectedFriend.username} has set their schedule to private. Showing only mutual saved panels.
+                        </div>
+                      ) : (
+                        <SegmentedControl
+                          size="sm"
+                          options={[
+                            { value: "all", label: `ALL SAVED PANELS (${friendEventsList.length})` },
+                            { value: "overlap", label: `MUTUAL OVERLAP (${friendSharedEvents.length})` },
+                          ]}
+                          value={friendViewMode}
+                          onChange={(val) => setFriendViewMode(val as "all" | "overlap")}
+                          style={{ marginBottom: 14 }}
+                        />
+                      )}
+
+                      {friendScheduleHidden || friendViewMode === "overlap" ? (
+                        friendSharedEvents.length === 0 ? (
+                          <p style={{ color: "var(--text-tertiary)", font: "var(--type-body-sm)" }}>
+                            No matching panels on your agendas yet.
+                          </p>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            {friendSharedEvents.map((ev) => (
+                              <div
+                                key={ev.id}
+                                onClick={() => setActiveDetailItem(ev)}
+                                style={{
+                                  backgroundColor: "var(--surface-inset)",
+                                  padding: 12,
+                                  borderRadius: "var(--r-control)",
+                                  border: "1px solid var(--line-hairline)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <div style={{ font: "var(--type-subhead)", color: "#fff" }}>{ev.title}</div>
+                                <div className="cd-data" style={{ color: "var(--text-secondary)", fontSize: 11 }}>
+                                  {ev.day} • {ev.timeString} • {ev.location}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      ) : friendEventsList.length === 0 ? (
                         <p style={{ color: "var(--text-tertiary)", font: "var(--type-body-sm)" }}>
-                          No matching panels on your agendas yet.
+                          No saved panels yet.
                         </p>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                          {friendSharedEvents.map((ev) => (
-                            <div
-                              key={ev.id}
-                              style={{
-                                backgroundColor: "var(--surface-inset)",
-                                padding: 12,
-                                borderRadius: "var(--r-control)",
-                                border: "1px solid var(--line-hairline)",
-                              }}
-                            >
-                              <div style={{ font: "var(--type-subhead)", color: "#fff" }}>{ev.title}</div>
-                              <div className="cd-data" style={{ color: "var(--text-secondary)", fontSize: 11 }}>
-                                {ev.day} • {ev.timeString} • {ev.location}
+                          {friendEventsList.map((ev) => {
+                            const bothGoing = !!userEventStatusMap[ev.id];
+                            const hasConflict = !bothGoing && checkFriendEventConflict(ev);
+                            return (
+                              <div
+                                key={ev.id}
+                                style={{
+                                  backgroundColor: "var(--surface-inset)",
+                                  padding: 12,
+                                  borderRadius: "var(--r-control)",
+                                  border: "1px solid var(--line-hairline)",
+                                }}
+                              >
+                                <div onClick={() => setActiveDetailItem(ev)} style={{ cursor: "pointer" }}>
+                                  <div style={{ font: "var(--type-subhead)", color: "#fff" }}>{ev.title}</div>
+                                  <div className="cd-data" style={{ color: "var(--text-secondary)", fontSize: 11 }}>
+                                    {ev.day} • {ev.timeString} • {ev.location}
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                                  {bothGoing ? (
+                                    <Badge tone="ok">✓ Both Going</Badge>
+                                  ) : (
+                                    <>
+                                      {hasConflict && <Badge tone="soon">⚠️ Conflict</Badge>}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleToggleEvent(ev.id, "going", true);
+                                        }}
+                                        className="cd-btn cd-btn-secondary"
+                                        style={{ padding: "4px 10px", fontSize: 12 }}
+                                      >
+                                        + ADD TO MINE
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1590,8 +1895,20 @@ export default function HomePage({
 
             <main style={{ maxWidth: 900, margin: "0 auto", padding: "16px var(--gutter)" }}>
               {!currentUser ? (
-                /* Logged-Out Authentication Card */
-                <div className="cd-glass-panel cd-notch" style={{ padding: 24, maxWidth: 440, margin: "0 auto" }}>
+                <>
+                  {pendingInvite && (
+                    <div
+                      className="cd-glass-panel cd-notch"
+                      style={{ padding: 16, maxWidth: 440, margin: "0 auto 16px" }}
+                    >
+                      <p style={{ font: "var(--type-body-sm)", color: "var(--text-primary)", textAlign: "center", margin: 0 }}>
+                        ✨ <strong style={{ color: "var(--gold-500)" }}>@{pendingInvite}</strong> invited you to
+                        join their squad! Sign in or register below to connect.
+                      </p>
+                    </div>
+                  )}
+                  {/* Logged-Out Authentication Card */}
+                  <div className="cd-glass-panel cd-notch" style={{ padding: 24, maxWidth: 440, margin: "0 auto" }}>
                   <div className="cd-label" style={{ color: "var(--gold-500)", marginBottom: 8, textAlign: "center" }}>
                     CYBERDRAGON AUTHENTICATION
                   </div>
@@ -1751,6 +2068,7 @@ export default function HomePage({
                     )}
                   </div>
                 </div>
+                </>
               ) : (
                 /* Logged-In Profile Dashboard */
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1812,6 +2130,39 @@ export default function HomePage({
                     >
                       ATTENDING
                     </span>
+                  </div>
+
+                  {/* Squad Privacy */}
+                  <div className="cd-glass-panel" style={{ padding: "12px 16px" }}>
+                    <div className="cd-label" style={{ marginBottom: 8, color: "var(--gold-500)" }}>
+                      SQUAD PRIVACY
+                    </div>
+                    <div
+                      className="cd-switch-row"
+                      onClick={handleTogglePrivacy}
+                      style={{ cursor: "pointer", userSelect: "none" }}
+                      role="switch"
+                      aria-checked={shareScheduleState}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleTogglePrivacy();
+                        }
+                      }}
+                    >
+                      <div>
+                        <div style={{ font: "var(--type-body-sm)", color: "#fff" }}>Share full schedule with Squad</div>
+                        <div className="cd-data" style={{ color: "var(--text-tertiary)", fontSize: 11 }}>
+                          {shareScheduleState
+                            ? "Squad members can see everything on your schedule."
+                            : "Squad members only see panels you both have saved."}
+                        </div>
+                      </div>
+                      <div className={`cd-switch ${shareScheduleState ? "checked" : ""}`}>
+                        <div className="cd-switch-thumb" />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Passkey Management */}
@@ -2112,7 +2463,10 @@ export default function HomePage({
                 userEventStatusMap[activeDetailItem.id] ? userEventStatusMap[activeDetailItem.id] : "going",
               )
             }
-            onClose={() => setActiveDetailItem(null)}
+            onClose={() => {
+              setActiveDetailItem(null);
+              cleanEventUrlParam();
+            }}
           />
         )}
         {/* Auth Modal Sheet */}
@@ -2127,6 +2481,22 @@ export default function HomePage({
                   ✕
                 </button>
               </div>
+              {pendingInvite && (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    background: "var(--surface-inset)",
+                    border: "1px solid var(--line-purple)",
+                    borderRadius: "var(--r-control)",
+                    marginBottom: 14,
+                    font: "var(--type-body-sm)",
+                    color: "var(--purple-200)",
+                    textAlign: "center",
+                  }}
+                >
+                  ✨ Connecting you with <strong>@{pendingInvite}</strong> upon sign in
+                </div>
+              )}
 
               {supportsPasskeys && authMode === "login" && (
                 <button

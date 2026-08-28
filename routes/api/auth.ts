@@ -47,7 +47,7 @@ export const POST = defineHandler(async (c: Context) => {
       );
       return c.json({
         success: true,
-        user: { id: userId, username: cleanUsername, name: name.trim(), role: "user" },
+        user: { id: userId, username: cleanUsername, name: name.trim(), role: "user", shareSchedule: 1 },
         token,
       });
     }
@@ -63,7 +63,13 @@ export const POST = defineHandler(async (c: Context) => {
       );
       return c.json({
         success: true,
-        user: { id: user.id, username: user.username, name: user.name, role: user.role },
+        user: {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          role: user.role,
+          shareSchedule: user.shareSchedule,
+        },
         token,
       });
     }
