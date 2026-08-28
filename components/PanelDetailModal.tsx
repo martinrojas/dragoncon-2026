@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useState, useEffect, useRef } from "react";
 import { calculateWalkTime } from "../lib/walktime";
 import { resolveVenueMap, getOfficialEventUrl } from "../lib/maps";
+import { shareLink } from "../lib/share";
 import { VenueMapModal } from "./VenueMapModal";
 
 export interface EventItem {
@@ -35,6 +36,7 @@ export function PanelDetailModal({
   onClose,
 }: PanelDetailModalProps): JSX.Element {
   const [showMapModal, setShowMapModal] = useState<boolean>(false);
+  const [shareToast, setShareToast] = useState<string>("");
 
   const walkInfo = calculateWalkTime(previousVenue, item.location);
   const mapMatch = resolveVenueMap(item.location);
@@ -302,6 +304,36 @@ export function PanelDetailModal({
                   ⭐ RATE SESSION ↗
                 </a>
               )}
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const url =
+                    typeof window !== "undefined"
+                      ? `${window.location.origin}/?event=${item.id}`
+                      : `https://dragoncon.martinrojas.dev/?event=${item.id}`;
+                  const res = await shareLink({
+                    title: item.title,
+                    text: `${item.title} · ${item.day || ""} ${item.timeString || ""}`,
+                    url,
+                  });
+                  if (res.copied) {
+                    setShareToast("Link copied to clipboard!");
+                    setTimeout(() => setShareToast(""), 3000);
+                  }
+                }}
+                className="cd-btn cd-btn-secondary"
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                }}
+              >
+                📤 SHARE PANEL
+              </button>
             </div>
 
             <button
@@ -317,6 +349,15 @@ export function PanelDetailModal({
             >
               {saved ? "✓ ON MY SCHEDULE" : "+ ADD TO SCHEDULE"}
             </button>
+
+            {shareToast && (
+              <div
+                className="cd-data"
+                style={{ textAlign: "center", color: "var(--jade-400)", fontSize: 12 }}
+              >
+                {shareToast}
+              </div>
+            )}
           </div>
       </dialog>
 

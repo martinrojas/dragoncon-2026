@@ -225,6 +225,13 @@ export default function HomePage({
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Strip the ?event= deep-link param from the URL without a navigation/reload
+  const cleanEventUrlParam = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("event");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  };
+
   // Initialize Auth & Settings
   useEffect(() => {
     setSupportsPasskeys(browserSupportsWebAuthn());
@@ -299,6 +306,21 @@ export default function HomePage({
       }
       return null;
     }, APP_VERSION);
+
+    // Resolve ?event=<id> deep link by fetching the event and opening its detail modal
+    const eventParam = new URLSearchParams(window.location.search).get("event");
+    if (eventParam) {
+      fetch(`/api/events?id=${eventParam}`)
+        .then((res) => res.json())
+        .then((data: { success: boolean; event?: EventItem }) => {
+          if (data.success && data.event) {
+            setActiveDetailItem(data.event);
+          }
+        })
+        .catch(() => {
+          // ignore deep link resolution errors
+        });
+    }
 
     return () => {
       cleanupErrorCatchers();
@@ -2112,7 +2134,10 @@ export default function HomePage({
                 userEventStatusMap[activeDetailItem.id] ? userEventStatusMap[activeDetailItem.id] : "going",
               )
             }
-            onClose={() => setActiveDetailItem(null)}
+            onClose={() => {
+              setActiveDetailItem(null);
+              cleanEventUrlParam();
+            }}
           />
         )}
         {/* Auth Modal Sheet */}
