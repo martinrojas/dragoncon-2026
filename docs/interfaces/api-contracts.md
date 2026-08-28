@@ -18,8 +18,11 @@ sources:
     resource: routes/api/schedule.ts:1-120
     title: User schedule and conflict detection handler
   - id: friends-route
-    resource: routes/api/friends.ts:1-101
-    title: Squad friendship and schedule overlap handler
+    resource: routes/api/friends.ts:1-147
+    title: Squad friendship, schedule privacy, and full agenda handler
+  - id: privacy-route
+    resource: routes/api/user/privacy.ts:1-31
+    title: User squad schedule privacy settings handler
   - id: auth-route
     resource: routes/api/auth.ts:1-76
     title: Password authentication handler
@@ -319,12 +322,12 @@ Compact registry for endpoints whose full schemas live in the SYSTEM_DESIGN API 
 
 | Method | Endpoint | Purpose | Notes |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/auth` | Password register / login | Returns `{ success, user, token }` [^auth-route] |
+| `POST` | `/api/auth` | Password register / login | Returns `{ success, user, token }` including `user.shareSchedule` [^auth-route] |
+| `PATCH` | `/api/user/privacy` | Toggle squad schedule visibility | Body `{ userId, shareSchedule }`, returns `{ success, shareSchedule }` [^privacy-route] |
 | `GET` | `/api/changes` | Recent schedule diffs | `?limit=` (default 50) [^changes-route] |
-| `GET` / `POST` | `/api/friends` | Squad friends & shared schedule | See friends-route [^friends-route] |
+| `GET` / `POST` | `/api/friends` | Squad friends & full / shared schedule | `GET ?userId=&friendId=` returns `{ success, scheduleHidden, friend, friendEvents, sharedEvents, sharedEventIds }` (requires existing squad connection); `POST` adds friend by username [^friends-route] |
 | `POST` | `/api/ingest` | Legacy admin ingestion trigger | Same engine as `/api/admin/ingest` via `runIngestionWithRunLog()`; run is recorded in history; returns `{ success, result }` where `result` includes `runId` [^legacy-ingest-route] |
 | `GET` | `/api/hello` | Void scaffold health check | Static JSON, no auth |
-
 ---
 
 ## 9. Background Worker Cron Triggers

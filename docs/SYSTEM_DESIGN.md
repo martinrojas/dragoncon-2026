@@ -177,6 +177,7 @@ erDiagram
         text password_hash
         text avatar_url
         text role
+        integer share_schedule
         text created_at
     }
 
@@ -253,8 +254,9 @@ erDiagram
 | `GET` | `/api/changes` | List recent schedule diffs | `?limit=` (default 50) | `{ success, count, changes }` |
 | `GET` | `/api/schedule` | Get user agenda & conflicts | `?userId=` | `{ success, count, items, conflicts }` |
 | `POST` | `/api/schedule` | Add/update/remove agenda item | `{ userId, eventId, action, status, notes }` | `{ success, message }` |
-| `GET` | `/api/friends` | List friends or shared schedule | `?userId=`, `?friendId=` | `{ success, friends, sharedEvents }` |
+| `GET` | `/api/friends` | List squad or view friend agenda | `?userId=`, `?friendId=` | `{ success, scheduleHidden, friend, friendEvents, sharedEvents, sharedEventIds }` |
 | `POST` | `/api/friends` | Add friend by handle | `{ userId, friendUsername }` | `{ success, message, friend }` |
+| `PATCH` | `/api/user/privacy` | Update squad schedule privacy | `{ userId, shareSchedule }` | `{ success, shareSchedule }` |
 | `POST` | `/api/auth` | Password login & registration | `{ action: "register"\|"login", username, password, name }` | `{ success, user, token }` |
 | `POST` | `/api/auth/passkey` | WebAuthn passkey ceremonies | `?action=generate-register-options\|verify-register\|...` | `{ success, options\|user\|token }` |
 | `GET` | `/api/export-ics` | Export schedule as `.ics` | `?userId=` | `text/calendar` attachment |

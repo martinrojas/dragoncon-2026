@@ -16,6 +16,7 @@ function createFakeD1() {
       password_hash TEXT NOT NULL,
       avatar_url TEXT,
       role TEXT NOT NULL DEFAULT 'user',
+      share_schedule INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE feedback (

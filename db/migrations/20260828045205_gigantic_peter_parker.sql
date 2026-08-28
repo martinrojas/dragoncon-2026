@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `share_schedule` integer DEFAULT 1 NOT NULL;

@@ -9,6 +9,13 @@ test("users table has a role column, notNull with default", () => {
   assert.strictEqual(users.role.hasDefault, true);
 });
 
+test("users table has a shareSchedule column, notNull with default 1", () => {
+  assert.ok(users.shareSchedule, "users.shareSchedule column should be defined");
+  assert.strictEqual(users.shareSchedule.name, "share_schedule");
+  assert.strictEqual(users.shareSchedule.notNull, true);
+  assert.strictEqual(users.shareSchedule.hasDefault, true);
+});
+
 test("ingestionRuns table is defined with the required columns", () => {
   assert.ok(ingestionRuns, "ingestionRuns table should be defined");
 

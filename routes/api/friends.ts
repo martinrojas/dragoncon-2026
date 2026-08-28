@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { defineHandler } from "void";
-import { db, eq, inArray } from "void/db";
-import { events, friendships, userEvents, users } from "../../db/schema";
+import { and, db, eq, inArray } from "void/db";
+import { events, friendships, userEvents, users } from "../../db/schema.ts";
 
 export const GET = defineHandler(async (c: Context) => {
   const userId = c.req.query("userId");
@@ -12,21 +12,66 @@ export const GET = defineHandler(async (c: Context) => {
   }
 
   if (friendId) {
+    const [existingFriendship] = await db
+      .select()
+      .from(friendships)
+      .where(and(eq(friendships.userId, userId), eq(friendships.friendId, friendId)));
+
+    if (!existingFriendship) {
+      return c.json({ success: false, error: "Must be squad members to view schedule" }, 403);
+    }
+
+    const [targetFriend] = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        name: users.name,
+        avatarUrl: users.avatarUrl,
+        shareSchedule: users.shareSchedule,
+      })
+      .from(users)
+      .where(eq(users.id, friendId));
+
+    if (!targetFriend) {
+      return c.json({ success: false, error: "Friend user not found" }, 404);
+    }
+
     const userSaved = await db.select().from(userEvents).where(eq(userEvents.userId, userId));
     const friendSaved = await db.select().from(userEvents).where(eq(userEvents.userId, friendId));
 
     const userEventIds = new Set(userSaved.map((s) => s.eventId));
+    const friendEventIds = friendSaved.map((s) => s.eventId);
     const sharedEventIds = friendSaved.filter((s) => userEventIds.has(s.eventId)).map((s) => s.eventId);
 
-    let sharedEvents: (typeof events.$inferSelect)[] = [];
+    const isPublic = targetFriend.shareSchedule === 1;
+
+    let friendEventsList: (typeof events.$inferSelect)[] = [];
+    let sharedEventsList: (typeof events.$inferSelect)[] = [];
+
+    if (isPublic && friendEventIds.length > 0) {
+      friendEventsList = await db
+        .select()
+        .from(events)
+        .where(inArray(events.id, friendEventIds))
+        .orderBy(events.startsAt);
+    }
+
     if (sharedEventIds.length > 0) {
-      sharedEvents = await db.select().from(events).where(inArray(events.id, sharedEventIds));
+      sharedEventsList = await db.select().from(events).where(inArray(events.id, sharedEventIds));
     }
 
     return c.json({
       success: true,
-      overlapCount: sharedEvents.length,
-      sharedEvents,
+      scheduleHidden: !isPublic,
+      friend: {
+        id: targetFriend.id,
+        username: targetFriend.username,
+        name: targetFriend.name,
+        avatarUrl: targetFriend.avatarUrl,
+      },
+      friendEvents: friendEventsList,
+      sharedEvents: sharedEventsList,
+      sharedEventIds,
     });
   }
 
@@ -46,6 +91,7 @@ export const GET = defineHandler(async (c: Context) => {
       username: users.username,
       name: users.name,
       avatarUrl: users.avatarUrl,
+      shareSchedule: users.shareSchedule,
     })
     .from(users)
     .where(inArray(users.id, friendIds));

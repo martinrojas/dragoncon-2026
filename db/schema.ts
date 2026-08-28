@@ -26,6 +26,7 @@ export const users = sqliteTable("users", {
   passwordHash: text("password_hash").notNull(),
   avatarUrl: text("avatar_url"),
   role: text("role").notNull().default("user"),
+  shareSchedule: integer("share_schedule").notNull().default(1),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
 
