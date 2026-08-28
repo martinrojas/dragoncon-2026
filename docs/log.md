@@ -3,6 +3,19 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-28 — Squad Invite Links, Event Deep Linking & Detailed Friend Schedule Browser
+
+- **Type:** Feature (social squad collaboration, deep linking, privacy controls).
+- **Capabilities Added:**
+  - **Web Share Helper (`lib/share.ts`):** Universal `shareLink()` wrapping `navigator.share` with clipboard fallback.
+  - **Event Deep Linking & Sharing:** "📤 SHARE PANEL" button in `PanelDetailModal` generates `/?event=<id>`. On mount, `pages/index.tsx` detects `?event=`, opens the modal for guests and logged-in users, and cleans the URL param on close.
+  - **Squad Invite Links:** "🔗 SHARE MY SQUAD INVITE LINK" in Squad tab generates `/?invite=<username>`. Displays an in-app confirmation banner (`[✓ ADD TO SQUAD] [✕ DISMISS]`) when logged in and a welcome onboarding prompt on the Profile/Auth tab when logged out.
+  - **Detailed Squad Schedule Browser:** Selecting a friend in the Squad tab toggles between "ALL SAVED PANELS" and "MUTUAL OVERLAP" with real-time indicators (`✓ Both Going`, `⚠️ Conflict`, and 1-click `+ ADD TO MINE` button).
+  - **Schedule Privacy Settings (`users.shareSchedule`):** Added D1 column `share_schedule` (default 1) with Profile toggle switch and `PATCH /api/user/privacy` endpoint. `GET /api/friends?userId=&friendId=` verifies friendship and respects target friend's privacy setting (`scheduleHidden: true` falls back to mutual overlap only).
+- **Files Modified:** `db/schema.ts`, `db/migrations/*`, `lib/share.ts`, `routes/api/friends.ts`, `routes/api/user/privacy.ts`, `routes/api/auth.ts`, `routes/api/auth/passkey.ts`, `components/PanelDetailModal.tsx`, `pages/index.tsx`, `public/sw.js` (bumped to `dragoncon-pwa-v15`), `tests/*.test.ts`.
+- **Verification:** 131/131 unit tests pass (`pnpm test`), SSR + client production builds clean (`pnpm build`).
+
+---
 ## 2026-08-27 — Chronological Event Ordering & Time Rail Slot Sorting
 
 - **Type:** Bugfix (display correctness — schedule panels rendered in random time sequence).
