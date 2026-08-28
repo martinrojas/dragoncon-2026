@@ -1627,10 +1627,11 @@ export default function HomePage({
                     type="button"
                     onClick={async () => {
                       if (!currentUser) return;
+                      const displayName = currentUser.name?.trim() || `@${currentUser.username}`;
                       const url = `${window.location.origin}/?invite=${encodeURIComponent(currentUser.username)}`;
                       const res = await shareLink({
                         title: "Join my CyberDragon Squad",
-                        text: `Join @${currentUser.username}'s Dragon Con squad on CyberDragon!`,
+                        text: `Join ${displayName}'s Dragon Con squad on CyberDragon!`,
                         url,
                       });
                       if (res.copied) {
