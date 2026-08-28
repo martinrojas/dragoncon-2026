@@ -252,6 +252,15 @@ export default function HomePage({
     window.history.replaceState({}, "", url.pathname + url.search + url.hash);
   };
 
+  // Clear a self-invite (user opened their own squad share link) and clean the URL
+  useEffect(() => {
+    if (currentUser && pendingInvite && pendingInvite.toLowerCase() === currentUser.username.toLowerCase()) {
+      setPendingInvite(null);
+      sessionStorage.removeItem("dc_pending_invite");
+      cleanInviteUrlParam();
+    }
+  }, [currentUser, pendingInvite]);
+
   // Initialize Auth & Settings
   useEffect(() => {
     setSupportsPasskeys(browserSupportsWebAuthn());
@@ -330,7 +339,7 @@ export default function HomePage({
     // Resolve ?event=<id> deep link by fetching the event and opening its detail modal
     const eventParam = new URLSearchParams(window.location.search).get("event");
     if (eventParam) {
-      fetch(`/api/events?id=${eventParam}`)
+      fetch(`/api/events?id=${encodeURIComponent(eventParam)}`)
         .then((res) => res.json())
         .then((data: { success: boolean; event?: EventItem }) => {
           if (data.success && data.event) {
@@ -678,6 +687,8 @@ export default function HomePage({
     if (!currentUser) return;
     setSelectedFriend(friend);
     setFriendViewMode("all");
+    setFriendEventsList([]);
+    setFriendSharedEvents([]);
     try {
       const res = await fetch(`/api/friends?userId=${currentUser.id}&friendId=${friend.id}`);
       const data = (await res.json()) as {
@@ -729,7 +740,7 @@ export default function HomePage({
   const handleAcceptInvite = async () => {
     if (!currentUser || !pendingInvite) return;
     try {
-      await fetch("/api/friends", {
+      const res = await fetch("/api/friends", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -737,8 +748,13 @@ export default function HomePage({
           friendUsername: pendingInvite,
         }),
       });
-      loadFriends(currentUser.id);
-      triggerToast("Squad member added!", "ok");
+      const data = (await res.json()) as { success: boolean; error?: string };
+      if (data.success) {
+        loadFriends(currentUser.id);
+        triggerToast("Squad member added!", "ok");
+      } else {
+        triggerToast(data.error || "Failed to add friend", "warn");
+      }
     } catch (e: unknown) {
       console.error("Failed to accept squad invite", e);
     } finally {
@@ -1761,20 +1777,21 @@ export default function HomePage({
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                                   {bothGoing ? (
                                     <Badge tone="ok">✓ Both Going</Badge>
-                                  ) : hasConflict ? (
-                                    <Badge tone="soon">⚠️ Conflict</Badge>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleToggleEvent(ev.id, "going", true);
-                                      }}
-                                      className="cd-btn cd-btn-secondary"
-                                      style={{ padding: "4px 10px", fontSize: 12 }}
-                                    >
-                                      + ADD TO MINE
-                                    </button>
+                                    <>
+                                      {hasConflict && <Badge tone="soon">⚠️ Conflict</Badge>}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleToggleEvent(ev.id, "going", true);
+                                        }}
+                                        className="cd-btn cd-btn-secondary"
+                                        style={{ padding: "4px 10px", fontSize: 12 }}
+                                      >
+                                        + ADD TO MINE
+                                      </button>
+                                    </>
                                   )}
                                 </div>
                               </div>

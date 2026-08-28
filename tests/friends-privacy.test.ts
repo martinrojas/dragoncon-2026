@@ -65,6 +65,12 @@ function createFakeFriendsD1() {
       ('ue_3', 'u_bob_pub', 'ev_2'),
       ('ue_4', 'u_charlie_priv', 'ev_1'),
       ('ue_5', 'u_charlie_priv', 'ev_2');
+
+    INSERT INTO friendships (id, user_id, friend_id) VALUES
+      ('f_1', 'u_alice', 'u_bob_pub'),
+      ('f_2', 'u_bob_pub', 'u_alice'),
+      ('f_3', 'u_alice', 'u_charlie_priv'),
+      ('f_4', 'u_charlie_priv', 'u_alice');
   `);
 
   return {

@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { defineHandler } from "void";
-import { db, eq, inArray } from "void/db";
+import { and, db, eq, inArray } from "void/db";
 import { events, friendships, userEvents, users } from "../../db/schema.ts";
 
 export const GET = defineHandler(async (c: Context) => {
@@ -12,6 +12,15 @@ export const GET = defineHandler(async (c: Context) => {
   }
 
   if (friendId) {
+    const [existingFriendship] = await db
+      .select()
+      .from(friendships)
+      .where(and(eq(friendships.userId, userId), eq(friendships.friendId, friendId)));
+
+    if (!existingFriendship) {
+      return c.json({ success: false, error: "Must be squad members to view schedule" }, 403);
+    }
+
     const [targetFriend] = await db
       .select({
         id: users.id,
@@ -40,7 +49,11 @@ export const GET = defineHandler(async (c: Context) => {
     let sharedEventsList: (typeof events.$inferSelect)[] = [];
 
     if (isPublic && friendEventIds.length > 0) {
-      friendEventsList = await db.select().from(events).where(inArray(events.id, friendEventIds));
+      friendEventsList = await db
+        .select()
+        .from(events)
+        .where(inArray(events.id, friendEventIds))
+        .orderBy(events.startsAt);
     }
 
     if (sharedEventIds.length > 0) {

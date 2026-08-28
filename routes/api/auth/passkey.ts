@@ -89,7 +89,7 @@ export const POST = defineHandler(async (c: Context) => {
 
       return c.json({
         success: true,
-        user: { id: user.id, username: user.username, name: user.name },
+        user: { id: user.id, username: user.username, name: user.name, shareSchedule: user.shareSchedule },
         options,
       });
     }
@@ -137,7 +137,15 @@ export const POST = defineHandler(async (c: Context) => {
         return c.json({
           success: true,
           message: "Passkey registered successfully!",
-          user: user ? { id: user.id, username: user.username, name: user.name, role: "user" } : null,
+          user: user
+            ? {
+                id: user.id,
+                username: user.username,
+                name: user.name,
+                role: "user",
+                shareSchedule: user.shareSchedule,
+              }
+            : null,
           token,
         });
       }
@@ -206,7 +214,13 @@ export const POST = defineHandler(async (c: Context) => {
 
         return c.json({
           success: true,
-          user: { id: user.id, username: user.username, name: user.name, role: user.role },
+          user: {
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            role: user.role,
+            shareSchedule: user.shareSchedule,
+          },
           token,
         });
       }
