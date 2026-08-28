@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import type { InferInsertModel } from "drizzle-orm";
 import { and, db, eq, inArray } from "void/db";
 import { eventChanges, events, ingestionRuns } from "../db/schema.ts";
+import { getRuntimeBinding } from "void/_env";
 
 
 
@@ -52,6 +53,21 @@ export let RETRY_DELAY_MS = 1500;
 export function setRetryDelayForTests(ms: number): void {
   RETRY_DELAY_MS = ms;
 }
+
+/** Minimal shape of the Browser Run binding used here. `@cloudflare/workers-types`
+ * declares a fuller `BrowserRun` class, but this project's tsconfig only pulls in
+ * `void/env` types, so the contract is restated locally. */
+interface BrowserRunBinding {
+  quickAction(action: "content", options: Record<string, unknown>): Promise<Response>;
+}
+type BrowserContentResponse =
+  | { success: true; result: string; meta: { status: number; title: string } }
+  | { success: false; errors: Array<{ message: string }> };
+
+// Browser Run costs real money and real wall time (~1-3 s per page), so a run
+// that is being blocked wholesale must not escalate every miss. 150 covers the
+// worst observed loss on a mid-size day; the cron's next tick picks up the rest.
+export const BROWSER_FALLBACK_BUDGET = 150;
 
 // Total event-detail fetches allowed across a whole `runIngestion` call when
 // the caller doesn't pass `maxDetailFetches`. Cron rotation gives each tick one
@@ -295,6 +311,39 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
   // can never exceed the invocation's subrequest budget.
   let detailFetchBudget = options.maxDetailFetches ?? DEFAULT_DETAIL_FETCH_BUDGET;
 
+  // Browser Run fallback: same URL, real Chrome, different egress. Bounded per run.
+  const browserBinding = getRuntimeBinding<BrowserRunBinding>("BROWSER");
+  let browserBudget = BROWSER_FALLBACK_BUDGET;
+  let browserRecovered = 0;
+  let browserBlocked = 0;
+  let browserMs = 0;
+
+  const fetchViaBrowser = async (url: string): Promise<{ html: string } | { error: string }> => {
+    if (!browserBinding) return { error: "no BROWSER binding" };
+    if (browserBudget <= 0) return { error: "browser budget exhausted" };
+    browserBudget--;
+    try {
+      const res = await browserBinding.quickAction("content", {
+        url,
+        userAgent: USER_AGENT,
+        setExtraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
+        rejectResourceTypes: ["image", "stylesheet", "font", "media", "script"],
+        gotoOptions: { waitUntil: "domcontentloaded", timeout: 20000 },
+      });
+      browserMs += Number(res.headers.get("X-Browser-Ms-Used") ?? 0);
+      if (!res.ok) return { error: `quickAction status ${res.status}` };
+      const body = (await res.json()) as BrowserContentResponse;
+      if (!body.success) return { error: body.errors?.[0]?.message ?? "quickAction failed" };
+      // meta.status is the status the *page* returned. A 403 here means the
+      // upstream blocked Browser Run too, which is the signal that this whole
+      // mitigation does not work against this origin.
+      if (body.meta.status !== 200) return { error: `page status ${body.meta.status}` };
+      return { html: body.result };
+    } catch (e: unknown) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  };
+
   log(
     `Starting Dragon Con 2026 schedule ingestion (mode: ${mode}, days: ${daysToFetch.join(", ")}, detail budget: ${detailFetchBudget})...`,
   );
@@ -321,12 +370,19 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
     let html = "";
     try {
       const res = await fetchWithBrowserHeaders(dayUrl);
-      if (!res.ok) {
-        log(`Failed to fetch ${dayUrl}: status ${res.status}`);
-        errorCount++;
-        continue;
+      if (res.ok) {
+        html = await res.text();
+      } else {
+        const viaBrowser = await fetchViaBrowser(dayUrl);
+        if ("error" in viaBrowser) {
+          browserBlocked++;
+          log(`Failed to fetch ${dayUrl}: status ${res.status} (browser fallback: ${viaBrowser.error})`);
+          errorCount++;
+          continue;
+        }
+        browserRecovered++;
+        html = viaBrowser.html;
       }
-      html = await res.text();
     } catch (e: unknown) {
       log(`Error fetching ${dayUrl}: ${e instanceof Error ? e.message : String(e)}`);
       errorCount++;
@@ -417,11 +473,22 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
           await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
           detailRes = await fetchWithBrowserHeaders(detailUrl, { refererPath: "/events/view_by_day" });
         }
-        if (!detailRes.ok) {
-          log(`Skipping event ${item.id} (${item.title}): detail fetch status ${detailRes.status}`);
-          return null;
+        let detailHtml: string;
+        if (detailRes.ok) {
+          detailHtml = await detailRes.text();
+        } else {
+          const viaBrowser = await fetchViaBrowser(detailUrl);
+          if ("error" in viaBrowser) {
+            browserBlocked++;
+            log(
+              `Skipping event ${item.id} (${item.title}): detail fetch status ${detailRes.status} ` +
+                `(browser fallback: ${viaBrowser.error})`,
+            );
+            return null;
+          }
+          browserRecovered++;
+          detailHtml = viaBrowser.html;
         }
-        const detailHtml = await detailRes.text();
         const $d = cheerio.load(sliceDetailRegion(detailHtml));
 
         let location = "";
@@ -768,6 +835,13 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
         `${createdCount - dayStartCreated} created, ${updatedCount - dayStartUpdated} updated, ` +
         `${deletedCount - dayStartDeleted} deleted, budget left: ${Math.max(detailFetchBudget, 0)}` +
         (truncated ? ", TRUNCATED" : ", complete"),
+    );
+  }
+
+  if (browserRecovered > 0 || browserBlocked > 0) {
+    log(
+      `[BROWSER-RUN] recovered ${browserRecovered}, still blocked ${browserBlocked}, ` +
+        `${browserMs} ms browser time, budget left ${browserBudget}`,
     );
   }
 

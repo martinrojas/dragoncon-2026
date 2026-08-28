@@ -41,6 +41,10 @@
       "migrations_dir": "./db/migrations"
     }
   ],
+  "browser": {
+    "binding": "BROWSER",
+    "remote": true
+  },
   "assets": {
     "directory": "dist/client"
   }

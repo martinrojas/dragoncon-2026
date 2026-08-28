@@ -1215,6 +1215,140 @@ test("a 403 on a detail page is retried once and the event survives", async () =
     setRetryDelayForTests(priorDelay);
   }
 });
+
+function fakeBrowser(reply: (url: string) => unknown, calls: string[] = []) {
+  return {
+    calls,
+    quickAction: async (_action: string, options: { url: string }) => {
+      calls.push(options.url);
+      return new Response(JSON.stringify(reply(options.url)), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "X-Browser-Ms-Used": "1200" },
+      });
+    },
+  };
+}
+
+test("a detail page blocked past the retry is recovered through Browser Run", async () => {
+  const day = "BrowserRecoverDay";
+  const dayParam = "browserrecoverday";
+  const items = Array.from({ length: 3 }, (_, i) => ({
+    id: `eb01${String(i).padStart(8, "0")}`,
+    title: `Browser Event ${i}`,
+    timeStr: `Time BR${i}`,
+  }));
+  const priorDelay = RETRY_DELAY_MS;
+  setRetryDelayForTests(0);
+  const routes: Parameters<typeof withMockedFetch>[0] = new Map();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  for (const it of items) {
+    if (it.id !== items[1].id) {
+      routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `D` }));
+    }
+  }
+  // items[1] 403s on both attempts
+  routes.set(`${BASE_URL}/event/${items[1].id}`, () => new Response("", { status: 403 }));
+
+  const calls: string[] = [];
+  const browser = fakeBrowser(
+    () => ({
+      success: true,
+      result: detailHtml({ location: "BrowserRecovered", description: "D" }),
+      meta: { status: 200, title: "" },
+    }),
+    calls,
+  );
+
+  try {
+    const result = await withRuntimeEnv({ DB: sharedFakeD1, BROWSER: browser }, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    );
+    assert.strictEqual(result.created, 3, "Browser Run must recover the event");
+    assert.strictEqual(getEvent(items[1].id)?.location, "BrowserRecovered");
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0], `${BASE_URL}/event/${items[1].id}`);
+    assert.ok(
+      result.log.some((l) => l.includes("[BROWSER-RUN] recovered 1, still blocked 0")),
+      "must log browser recovery summary",
+    );
+  } finally {
+    setRetryDelayForTests(priorDelay);
+  }
+});
+
+test("a Browser Run fallback that is itself blocked skips the event and is logged", async () => {
+  const day = "BrowserBlockDay";
+  const dayParam = "browserblockday";
+  const items = Array.from({ length: 3 }, (_, i) => ({
+    id: `eb02${String(i).padStart(8, "0")}`,
+    title: `Browser Blocked Event ${i}`,
+    timeStr: `Time BB${i}`,
+  }));
+  const priorDelay = RETRY_DELAY_MS;
+  setRetryDelayForTests(0);
+  const routes: Parameters<typeof withMockedFetch>[0] = new Map();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  for (const it of items) {
+    if (it.id !== items[1].id) {
+      routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `D` }));
+    }
+  }
+  routes.set(`${BASE_URL}/event/${items[1].id}`, () => new Response("", { status: 403 }));
+
+  const browser = fakeBrowser(() => ({
+    success: true,
+    result: "<html>denied</html>",
+    meta: { status: 403, title: "" },
+  }));
+
+  try {
+    const result = await withRuntimeEnv({ DB: sharedFakeD1, BROWSER: browser }, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    );
+    assert.strictEqual(result.created, 2, "blocked event must be skipped");
+    assert.strictEqual(getEvent(items[1].id), undefined);
+    assert.ok(
+      result.log.some((l) => /detail fetch status 403 \(browser fallback: page status 403\)/.test(l)),
+      "must log browser block reason",
+    );
+  } finally {
+    setRetryDelayForTests(priorDelay);
+  }
+});
+
+test("detail fetches degrade to today's behavior when no BROWSER binding is bound", async () => {
+  const day = "NoBrowserDay";
+  const dayParam = "nobrowserday";
+  const items = Array.from({ length: 3 }, (_, i) => ({
+    id: `eb03${String(i).padStart(8, "0")}`,
+    title: `No Browser Event ${i}`,
+    timeStr: `Time NB${i}`,
+  }));
+  const priorDelay = RETRY_DELAY_MS;
+  setRetryDelayForTests(0);
+  const routes: Parameters<typeof withMockedFetch>[0] = new Map();
+  routes.set(`${BASE_URL}/events/view_by_day?day=${dayParam}`, dayListingHtml(day, items));
+  for (const it of items) {
+    if (it.id !== items[1].id) {
+      routes.set(`${BASE_URL}/event/${it.id}`, detailHtml({ location: `Room ${it.id}`, description: `D` }));
+    }
+  }
+  routes.set(`${BASE_URL}/event/${items[1].id}`, () => new Response("", { status: 403 }));
+
+  try {
+    const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+      withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+    );
+    assert.strictEqual(result.created, 2, "without BROWSER binding, permanently blocked event is skipped");
+    assert.strictEqual(getEvent(items[1].id), undefined);
+    assert.ok(
+      result.log.some((l) => l.includes("(browser fallback: no BROWSER binding)")),
+      "must log missing binding fallback",
+    );
+  } finally {
+    setRetryDelayForTests(priorDelay);
+  }
+});
 // ---------------------------------------------------------------------------
 // Fix Round 2: full-day ingestion must stay far below per-invocation
 // subrequest ceilings (D1 statements + HTTP detail fetches), so a single
