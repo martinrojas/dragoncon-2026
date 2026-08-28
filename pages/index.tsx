@@ -892,17 +892,20 @@ export default function HomePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: currentUser.id, shareSchedule: newValue }),
       });
-      const data = (await res.json()) as { success: boolean; shareSchedule: number };
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; shareSchedule?: number; error?: string };
       if (data.success) {
-        const updatedUser = { ...currentUser, shareSchedule: data.shareSchedule };
+        const updatedUser = { ...currentUser, shareSchedule: data.shareSchedule ?? (newValue ? 1 : 0) };
         setCurrentUser(updatedUser);
         localStorage.setItem("dc_user", JSON.stringify(updatedUser));
+        triggerToast(newValue ? "Full schedule shared with Squad" : "Schedule set to private (mutual overlap only)", "ok");
       } else {
         setShareScheduleState(!newValue);
+        triggerToast(data.error || "Failed to update privacy setting", "error");
       }
     } catch (e: unknown) {
       console.error("Failed to update privacy setting", e);
       setShareScheduleState(!newValue);
+      triggerToast("Network error updating privacy setting", "error");
     }
   };
 
@@ -2110,7 +2113,20 @@ export default function HomePage({
                     <div className="cd-label" style={{ marginBottom: 8, color: "var(--gold-500)" }}>
                       SQUAD PRIVACY
                     </div>
-                    <div className="cd-switch-row">
+                    <div
+                      className="cd-switch-row"
+                      onClick={handleTogglePrivacy}
+                      style={{ cursor: "pointer", userSelect: "none" }}
+                      role="switch"
+                      aria-checked={shareScheduleState}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleTogglePrivacy();
+                        }
+                      }}
+                    >
                       <div>
                         <div style={{ font: "var(--type-body-sm)", color: "#fff" }}>Share full schedule with Squad</div>
                         <div className="cd-data" style={{ color: "var(--text-tertiary)", fontSize: 11 }}>
@@ -2119,10 +2135,7 @@ export default function HomePage({
                             : "Squad members only see panels you both have saved."}
                         </div>
                       </div>
-                      <div
-                        className={`cd-switch ${shareScheduleState ? "checked" : ""}`}
-                        onClick={handleTogglePrivacy}
-                      >
+                      <div className={`cd-switch ${shareScheduleState ? "checked" : ""}`}>
                         <div className="cd-switch-thumb" />
                       </div>
                     </div>

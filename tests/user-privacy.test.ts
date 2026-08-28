@@ -47,13 +47,14 @@ function createFakeD1() {
 test("PATCH /api/user/privacy updates share_schedule flag", async () => {
   const fakeD1 = createFakeD1();
   await withRuntimeEnv({ DB: fakeD1 as never }, async () => {
-    const req = new Request("http://localhost/api/user/privacy", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: "u_alice", shareSchedule: false }),
-    });
+    const req = {
+      json: async () => ({ userId: "u_alice", shareSchedule: false }),
+    };
 
-    const res = await PATCH({ req } as never);
+    const res = await PATCH({
+      req,
+      json: (d: unknown, s = 200) => ({ status: s, json: async () => d }),
+    } as never);
     const data = (await res.json()) as { success: boolean; shareSchedule: number };
 
     assert.strictEqual(res.status, 200);

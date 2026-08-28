@@ -13,7 +13,7 @@ export const PATCH = defineHandler(async (c: Context) => {
     const { userId, shareSchedule } = body;
 
     if (!userId || typeof shareSchedule !== "boolean") {
-      return Response.json({ success: false, error: "userId and shareSchedule boolean required" }, { status: 400 });
+      return c.json({ success: false, error: "userId and shareSchedule boolean required" }, 400);
     }
 
     const value = shareSchedule ? 1 : 0;
@@ -23,9 +23,9 @@ export const PATCH = defineHandler(async (c: Context) => {
       .set({ shareSchedule: value })
       .where(eq(users.id, userId));
 
-    return Response.json({ success: true, shareSchedule: value });
+    return c.json({ success: true, shareSchedule: value });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    return Response.json({ success: false, error: message }, { status: 500 });
+    return c.json({ success: false, error: message }, 500);
   }
 });
