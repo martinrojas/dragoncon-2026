@@ -64,6 +64,9 @@ Start here: `docs/SYSTEM_DESIGN.md`. Full map: `docs/index.md`.
 
 ## Project Policies
 
+### Deployment
+- Never run deploy commands (`pnpm run deploy`, `npx wrangler deploy`, `void deploy`) without explicit permission from the user.
+
 ### Code Quality & Testing
 - New domain logic or calculation algorithms must include unit tests in `tests/`.
 - All pull requests must pass `pnpm test` and `pnpm build` before merging.
