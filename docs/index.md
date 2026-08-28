@@ -28,8 +28,10 @@ last_verified: 2026-08-26
 
 ## Sources
 
-*No active unharvested sources. All historical design specs and implementation plans have been harvested into knowledge concepts and removed.*
-
+| Document | Type | Harvest Status |
+| :--- | :--- | :--- |
+| [`superpowers/specs/2026-08-28-squad-share-deep-linking-design.md`](/docs/superpowers/specs/2026-08-28-squad-share-deep-linking-design.md) | `Design Spec` | ✓ harvested (safe to delete) |
+| [`superpowers/plans/2026-08-28-squad-share-deep-linking.md`](/docs/superpowers/plans/2026-08-28-squad-share-deep-linking.md) | `Implementation Plan` | ✓ harvested (safe to delete) |
 ---
 
 ## Registered
@@ -53,3 +55,6 @@ last_verified: 2026-08-26
 | [`tests/admin-ui.test.ts`](/tests/admin-ui.test.ts) | Unit Test Suite (Admin Dashboard SSR & Head Loader) | CyberDragon Engineering |
 | [`tests/crons.test.ts`](/tests/crons.test.ts) | Unit Test Suite (Automated Cron Job & Schedule Ingestion) | CyberDragon Engineering |
 | [`tests/event-ordering.test.ts`](/tests/event-ordering.test.ts) | Unit Test Suite (Chronological Event & Time Rail Slot Ordering) | CyberDragon Engineering |
+| [`tests/share.test.ts`](/tests/share.test.ts) | Unit Test Suite (Web Share & Clipboard Fallback) | CyberDragon Engineering |
+| [`tests/user-privacy.test.ts`](/tests/user-privacy.test.ts) | Unit Test Suite (Squad Schedule Privacy PATCH API) | CyberDragon Engineering |
+| [`tests/friends-privacy.test.ts`](/tests/friends-privacy.test.ts) | Unit Test Suite (Friends Full Agenda & Schedule Privacy Authorization) | CyberDragon Engineering |
