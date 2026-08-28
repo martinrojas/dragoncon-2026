@@ -10,7 +10,7 @@ export const cron = [
 // One con day per tick: each invocation gets the Worker's whole subrequest
 // budget instead of sharing it across all seven days (which starved
 // Saturday/Sunday whenever earlier days consumed it).
-export const SYNC_DAYS = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7", "Sep++8"] as const;
+export const SYNC_DAYS = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep++7"] as const;
 
 /** Tick interval for each declared cron pattern. Rotation advances exactly one
  * con day per invocation, so a tighter cadence sweeps the whole schedule more

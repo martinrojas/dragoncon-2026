@@ -281,8 +281,9 @@ test("runIngestionWithRunLog marks the run failed when ingestion throws", async 
 // ---------------------------------------------------------------------------
 
 test("nextSyncDays rotates through every con day deterministically", () => {
+  const FOUR_HOURS = 4 * 60 * 60 * 1000;
   const start = new Date("2026-08-24T00:00:00Z").getTime();
-  const picks = Array.from({ length: SYNC_DAYS.length * 2 }, (_, i) => nextSyncDays(new Date(start + i * 4 * 60 * 60 * 1000))[0]);
+  const picks = Array.from({ length: SYNC_DAYS.length * 2 }, (_, i) => nextSyncDays(new Date(start + i * FOUR_HOURS), FOUR_HOURS)[0]);
 
   assert.strictEqual(picks.length, SYNC_DAYS.length * 2);
   for (let i = 0; i < SYNC_DAYS.length; i++) {
@@ -321,8 +322,9 @@ test("every declared cron pattern has a cadence mapping", () => {
 
 test("nextSyncDays never returns a con day that has already passed", () => {
   // Sep 6, 2026 18:00Z == 2pm ET Sunday: Wed(2)-Sat(5) are behind ET.
+  // 04:00Z through 23:00Z are Sunday in America/New_York (UTC-4).
   const PAST_BY_SUNDAY: Record<string, true> = { "Sep++2": true, "Sep++3": true, "Sep++4": true, "Sep++5": true };
-  for (let hour = 0; hour < 24; hour += 4) {
+  for (let hour = 4; hour < 24; hour += 4) {
     const pick = nextSyncDays(new Date(Date.UTC(2026, 8, 6, hour)))[0];
     assert.ok(pick && !(pick in PAST_BY_SUNDAY), `tick ${hour}Z returned stale day ${pick}`);
   }
