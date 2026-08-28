@@ -18,6 +18,7 @@ import {
 } from "../components/CyberDragonUi";
 import { PanelDetailModal } from "../components/PanelDetailModal";
 import { calculateWalkTime, parseTimeDisplay } from "../lib/walktime";
+import { shareLink } from "../lib/share";
 import { AppStoragePanel, type InstallPromptEvent } from "../components/AppStoragePanel";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -200,6 +201,7 @@ export default function HomePage({
   const [selectedFriend, setSelectedFriend] = useState<User | null>(null);
   const [friendSharedEvents, setFriendSharedEvents] = useState<EventItem[]>([]);
   const [friendMsg, setFriendMsg] = useState("");
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
 
   // Ingestion Sync & Cache
   const [isSyncing, setIsSyncing] = useState(false);
@@ -229,6 +231,13 @@ export default function HomePage({
   const cleanEventUrlParam = () => {
     const url = new URL(window.location.href);
     url.searchParams.delete("event");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  };
+
+  // Strip the ?invite= deep-link param from the URL without a navigation/reload
+  const cleanInviteUrlParam = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("invite");
     window.history.replaceState({}, "", url.pathname + url.search + url.hash);
   };
 
@@ -320,6 +329,16 @@ export default function HomePage({
         .catch(() => {
           // ignore deep link resolution errors
         });
+    }
+
+    // Resolve ?invite=<username> deep link, persisting across login/registration
+    const inviteParam = new URLSearchParams(window.location.search).get("invite");
+    if (inviteParam) {
+      sessionStorage.setItem("dc_pending_invite", inviteParam);
+      setPendingInvite(inviteParam);
+    } else {
+      const savedInvite = sessionStorage.getItem("dc_pending_invite");
+      if (savedInvite) setPendingInvite(savedInvite);
     }
 
     return () => {
@@ -687,6 +706,35 @@ export default function HomePage({
     }
   };
 
+  // Accept a pending squad invite from a shared link
+  const handleAcceptInvite = async () => {
+    if (!currentUser || !pendingInvite) return;
+    try {
+      await fetch("/api/friends", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          friendUsername: pendingInvite,
+        }),
+      });
+      loadFriends(currentUser.id);
+      triggerToast("Squad member added!", "ok");
+    } catch (e: unknown) {
+      console.error("Failed to accept squad invite", e);
+    } finally {
+      setPendingInvite(null);
+      sessionStorage.removeItem("dc_pending_invite");
+      cleanInviteUrlParam();
+    }
+  };
+
+  const handleDismissInvite = () => {
+    setPendingInvite(null);
+    sessionStorage.removeItem("dc_pending_invite");
+    cleanInviteUrlParam();
+  };
+
   // Check for App & Schedule Updates (non-destructive attendee fetch)
   const handleCheckForUpdates = async () => {
     setIsSyncing(true);
@@ -1040,6 +1088,37 @@ export default function HomePage({
             }}
           >
             {syncStatusMsg}
+          </div>
+        )}
+
+        {/* Squad Invite Confirmation Banner */}
+        {currentUser && pendingInvite && pendingInvite.toLowerCase() !== currentUser.username.toLowerCase() && (
+          <div style={{ padding: "12px var(--gutter) 0" }}>
+            <div
+              className="cd-glass-panel cd-notch"
+              style={{
+                maxWidth: 900,
+                margin: "0 auto",
+                padding: 16,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ font: "var(--type-body-sm)", color: "var(--text-primary)" }}>
+                <strong style={{ color: "var(--gold-500)" }}>@{pendingInvite}</strong> invited you to their Squad!
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" onClick={handleAcceptInvite} className="cd-btn cd-btn-primary">
+                  ✓ ADD TO SQUAD
+                </button>
+                <button type="button" onClick={handleDismissInvite} className="cd-btn cd-btn-ghost">
+                  ✕ DISMISS
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1466,6 +1545,27 @@ export default function HomePage({
                     </button>
                   </form>
 
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!currentUser) return;
+                      const url = `${window.location.origin}/?invite=${encodeURIComponent(currentUser.username)}`;
+                      const res = await shareLink({
+                        title: "Join my CyberDragon Squad",
+                        text: `Join @${currentUser.username}'s Dragon Con squad on CyberDragon!`,
+                        url,
+                      });
+                      if (res.copied) {
+                        setFriendMsg("Invite link copied to clipboard!");
+                        setTimeout(() => setFriendMsg(""), 3000);
+                      }
+                    }}
+                    className="cd-btn cd-btn-secondary"
+                    style={{ width: "100%", marginBottom: 16 }}
+                  >
+                    🔗 SHARE MY SQUAD INVITE LINK
+                  </button>
+
                   {friendMsg && (
                     <div style={{ marginBottom: 12, color: "var(--gold-500)", font: "var(--type-data)" }}>
                       {friendMsg}
@@ -1612,8 +1712,20 @@ export default function HomePage({
 
             <main style={{ maxWidth: 900, margin: "0 auto", padding: "16px var(--gutter)" }}>
               {!currentUser ? (
-                /* Logged-Out Authentication Card */
-                <div className="cd-glass-panel cd-notch" style={{ padding: 24, maxWidth: 440, margin: "0 auto" }}>
+                <>
+                  {pendingInvite && (
+                    <div
+                      className="cd-glass-panel cd-notch"
+                      style={{ padding: 16, maxWidth: 440, margin: "0 auto 16px" }}
+                    >
+                      <p style={{ font: "var(--type-body-sm)", color: "var(--text-primary)", textAlign: "center", margin: 0 }}>
+                        ✨ <strong style={{ color: "var(--gold-500)" }}>@{pendingInvite}</strong> invited you to
+                        join their squad! Sign in or register below to connect.
+                      </p>
+                    </div>
+                  )}
+                  {/* Logged-Out Authentication Card */}
+                  <div className="cd-glass-panel cd-notch" style={{ padding: 24, maxWidth: 440, margin: "0 auto" }}>
                   <div className="cd-label" style={{ color: "var(--gold-500)", marginBottom: 8, textAlign: "center" }}>
                     CYBERDRAGON AUTHENTICATION
                   </div>
@@ -1773,6 +1885,7 @@ export default function HomePage({
                     )}
                   </div>
                 </div>
+                </>
               ) : (
                 /* Logged-In Profile Dashboard */
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
