@@ -992,7 +992,7 @@ export default function AdminPage(props: Props) {
         </div>
 
         {/* Past Runs History Table */}
-        <div className="cd-glass-panel" style={{ padding: 16 }}>
+        <div className="cd-glass-panel" style={{ padding: 16, maxHeight: "50vh", overflowY: "scroll", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <h4 style={{ font: "var(--type-subhead)", color: "var(--gold-400)", fontSize: 14 }}>
               📜 INGESTION RUN HISTORY
