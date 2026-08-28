@@ -285,9 +285,9 @@ export default function HomePage({
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onAppInstalled);
 
-    // Cloudflare Web Analytics (SPA mode)
+    // Cloudflare Web Analytics (SPA mode) - only in production
     const cfBeaconToken = import.meta.env.VITE_CF_BEACON_TOKEN;
-    if (cfBeaconToken && !document.querySelector('script[src*="cloudflareinsights.com/beacon"]')) {
+    if (import.meta.env.PROD && cfBeaconToken && !document.querySelector('script[src*="cloudflareinsights.com/beacon"]')) {
       const script = document.createElement("script");
       script.type = "module";
       script.src = "https://static.cloudflareinsights.com/beacon.min.js";
@@ -1169,8 +1169,8 @@ export default function HomePage({
           </div>
         )}
 
-        {/* Squad Invite Confirmation Banner */}
-        {currentUser && pendingInvite && pendingInvite.toLowerCase() !== currentUser.username.toLowerCase() && (
+        {/* Squad Invite Banner (Logged In or Guest) */}
+        {pendingInvite && (!currentUser || pendingInvite.toLowerCase() !== currentUser.username.toLowerCase()) && (
           <div style={{ padding: "12px var(--gutter) 0" }}>
             <div
               className="cd-glass-panel cd-notch"
@@ -1183,15 +1183,30 @@ export default function HomePage({
                 justifyContent: "space-between",
                 gap: 12,
                 flexWrap: "wrap",
+                borderColor: "var(--line-purple)",
+                background: "var(--surface-glass-strong)",
               }}
             >
               <span style={{ font: "var(--type-body-sm)", color: "var(--text-primary)" }}>
-                <strong style={{ color: "var(--gold-500)" }}>@{pendingInvite}</strong> invited you to their Squad!
+                ✨ <strong style={{ color: "var(--gold-500)" }}>@{pendingInvite}</strong> invited you to join their Dragon Con squad!
               </span>
               <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" onClick={handleAcceptInvite} className="cd-btn cd-btn-primary">
-                  ✓ ADD TO SQUAD
-                </button>
+                {currentUser ? (
+                  <button type="button" onClick={handleAcceptInvite} className="cd-btn cd-btn-primary">
+                    ✓ ADD TO SQUAD
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("register");
+                      setShowAuthModal(true);
+                    }}
+                    className="cd-btn cd-btn-signal"
+                  >
+                    ⚡ LOG IN / REGISTER
+                  </button>
+                )}
                 <button type="button" onClick={handleDismissInvite} className="cd-btn cd-btn-ghost">
                   ✕ DISMISS
                 </button>
@@ -1586,13 +1601,21 @@ export default function HomePage({
               {!currentUser ? (
                 <div className="cd-glass-panel" style={{ padding: 30, textAlign: "center" }}>
                   <h2 style={{ font: "var(--type-heading)", color: "var(--gold-500)", marginBottom: 8 }}>
-                    CONNECT WITH YOUR SQUAD
+                    {pendingInvite ? `@${pendingInvite.toUpperCase()} INVITED YOU TO SQUAD` : "CONNECT WITH YOUR SQUAD"}
                   </h2>
                   <p style={{ font: "var(--type-body)", color: "var(--text-secondary)", marginBottom: 16 }}>
-                    Add your con buddies by username to compare schedules and find shared panels.
+                    {pendingInvite
+                      ? `Connect with @${pendingInvite} on CyberDragon to compare panel schedules and coordinate con plans.`
+                      : "Add your con buddies by username to compare schedules and find shared panels."}
                   </p>
-                  <button onClick={() => setShowAuthModal(true)} className="cd-btn cd-btn-signal">
-                    LOG IN
+                  <button
+                    onClick={() => {
+                      if (pendingInvite) setAuthMode("register");
+                      setShowAuthModal(true);
+                    }}
+                    className="cd-btn cd-btn-signal"
+                  >
+                    {pendingInvite ? `✨ JOIN @${pendingInvite.toUpperCase()}'S SQUAD` : "LOG IN"}
                   </button>
                 </div>
               ) : (
@@ -2458,6 +2481,22 @@ export default function HomePage({
                   ✕
                 </button>
               </div>
+              {pendingInvite && (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    background: "var(--surface-inset)",
+                    border: "1px solid var(--line-purple)",
+                    borderRadius: "var(--r-control)",
+                    marginBottom: 14,
+                    font: "var(--type-body-sm)",
+                    color: "var(--purple-200)",
+                    textAlign: "center",
+                  }}
+                >
+                  ✨ Connecting you with <strong>@{pendingInvite}</strong> upon sign in
+                </div>
+              )}
 
               {supportsPasskeys && authMode === "login" && (
                 <button
