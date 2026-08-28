@@ -7,6 +7,7 @@ import {
 } from "@simplewebauthn/browser";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type JSX } from "react";
 import {
+  Badge,
   AppBar,
   DayStrip,
   Icon,
@@ -31,6 +32,7 @@ export interface User {
   username: string;
   name: string;
   role?: string;
+  shareSchedule?: number;
 }
 
 export interface EventItem {
@@ -202,6 +204,10 @@ export default function HomePage({
   const [friendSharedEvents, setFriendSharedEvents] = useState<EventItem[]>([]);
   const [friendMsg, setFriendMsg] = useState("");
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+  const [friendEventsList, setFriendEventsList] = useState<EventItem[]>([]);
+  const [friendScheduleHidden, setFriendScheduleHidden] = useState(false);
+  const [friendViewMode, setFriendViewMode] = useState<"all" | "overlap">("all");
+  const [shareScheduleState, setShareScheduleState] = useState(true);
 
   // Ingestion Sync & Cache
   const [isSyncing, setIsSyncing] = useState(false);
@@ -226,6 +232,11 @@ export default function HomePage({
     const timer = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // Sync Squad privacy toggle state whenever the logged-in user changes
+  useEffect(() => {
+    setShareScheduleState(currentUser ? currentUser.shareSchedule !== 0 : true);
+  }, [currentUser]);
 
   // Strip the ?event= deep-link param from the URL without a navigation/reload
   const cleanEventUrlParam = () => {
@@ -666,11 +677,19 @@ export default function HomePage({
   const handleCompareFriend = async (friend: User) => {
     if (!currentUser) return;
     setSelectedFriend(friend);
+    setFriendViewMode("all");
     try {
       const res = await fetch(`/api/friends?userId=${currentUser.id}&friendId=${friend.id}`);
-      const data = (await res.json()) as { success: boolean; sharedEvents: EventItem[] };
+      const data = (await res.json()) as {
+        success: boolean;
+        friendEvents?: EventItem[];
+        sharedEvents?: EventItem[];
+        scheduleHidden?: boolean;
+      };
       if (data.success) {
-        setFriendSharedEvents(data.sharedEvents);
+        setFriendEventsList(data.friendEvents || []);
+        setFriendSharedEvents(data.sharedEvents || []);
+        setFriendScheduleHidden(!!data.scheduleHidden);
       }
     } catch (e: unknown) {
       console.error(e);
@@ -846,6 +865,31 @@ export default function HomePage({
     triggerToast("Signed out", "ok");
   };
 
+  // Toggle Squad schedule sharing privacy
+  const handleTogglePrivacy = async () => {
+    if (!currentUser) return;
+    const newValue = !shareScheduleState;
+    setShareScheduleState(newValue);
+    try {
+      const res = await fetch("/api/user/privacy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUser.id, shareSchedule: newValue }),
+      });
+      const data = (await res.json()) as { success: boolean; shareSchedule: number };
+      if (data.success) {
+        const updatedUser = { ...currentUser, shareSchedule: data.shareSchedule };
+        setCurrentUser(updatedUser);
+        localStorage.setItem("dc_user", JSON.stringify(updatedUser));
+      } else {
+        setShareScheduleState(!newValue);
+      }
+    } catch (e: unknown) {
+      console.error("Failed to update privacy setting", e);
+      setShareScheduleState(!newValue);
+    }
+  };
+
   // Format Day Items for DayStrip (sorted chronologically by con date)
   // Format Day Items for DayStrip directly from server-driven days
   const formattedDays: DayItem[] = useMemo(() => {
@@ -930,6 +974,21 @@ export default function HomePage({
   // Conflict checker for any event ID
   const checkEventConflict = (eventId: string): boolean => {
     return agendaConflicts.some((c) => c.event1Id === eventId || c.event2Id === eventId);
+  };
+
+  // Conflict checker for a friend's event against the current user's own saved schedule
+  const checkFriendEventConflict = (ev: EventItem): boolean => {
+    if (!ev.startsAt || !ev.endsAt) return false;
+    const evStart = new Date(ev.startsAt).getTime();
+    const evEnd = new Date(ev.endsAt).getTime();
+    return agendaItems.some((item) => {
+      const other = item.event;
+      if (item.status !== "going" || !other || item.eventId === ev.id) return false;
+      if (other.day !== ev.day || !other.startsAt || !other.endsAt) return false;
+      const oStart = new Date(other.startsAt).getTime();
+      const oEnd = new Date(other.endsAt).getTime();
+      return evStart < oEnd && oStart < evEnd;
+    });
   };
 
   // Filter events according to smart checkboxes and segmented control
@@ -1613,34 +1672,114 @@ export default function HomePage({
                     </div>
                   )}
 
-                  {/* Overlap View */}
+                  {/* Detailed Squad Schedule Browser */}
                   {selectedFriend && (
                     <div className="cd-glass-panel">
                       <span className="cd-label" style={{ display: "block", marginBottom: 12, color: "var(--gold-500)" }}>
-                        SHARED PANELS WITH {selectedFriend.name.toUpperCase()} ({friendSharedEvents.length})
+                        {selectedFriend.name.toUpperCase()}'S SCHEDULE
                       </span>
-                      {friendSharedEvents.length === 0 ? (
+
+                      {friendScheduleHidden ? (
+                        <div
+                          style={{
+                            padding: 10,
+                            marginBottom: 14,
+                            backgroundColor: "var(--surface-inset)",
+                            border: "1px solid var(--line-hairline)",
+                            borderRadius: "var(--r-control)",
+                            font: "var(--type-body-sm)",
+                            color: "var(--text-secondary)",
+                          }}
+                        >
+                          🔒 @{selectedFriend.username} has set their schedule to private. Showing only mutual saved panels.
+                        </div>
+                      ) : (
+                        <SegmentedControl
+                          size="sm"
+                          options={[
+                            { value: "all", label: `ALL SAVED PANELS (${friendEventsList.length})` },
+                            { value: "overlap", label: `MUTUAL OVERLAP (${friendSharedEvents.length})` },
+                          ]}
+                          value={friendViewMode}
+                          onChange={(val) => setFriendViewMode(val as "all" | "overlap")}
+                          style={{ marginBottom: 14 }}
+                        />
+                      )}
+
+                      {friendScheduleHidden || friendViewMode === "overlap" ? (
+                        friendSharedEvents.length === 0 ? (
+                          <p style={{ color: "var(--text-tertiary)", font: "var(--type-body-sm)" }}>
+                            No matching panels on your agendas yet.
+                          </p>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            {friendSharedEvents.map((ev) => (
+                              <div
+                                key={ev.id}
+                                onClick={() => setActiveDetailItem(ev)}
+                                style={{
+                                  backgroundColor: "var(--surface-inset)",
+                                  padding: 12,
+                                  borderRadius: "var(--r-control)",
+                                  border: "1px solid var(--line-hairline)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <div style={{ font: "var(--type-subhead)", color: "#fff" }}>{ev.title}</div>
+                                <div className="cd-data" style={{ color: "var(--text-secondary)", fontSize: 11 }}>
+                                  {ev.day} • {ev.timeString} • {ev.location}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      ) : friendEventsList.length === 0 ? (
                         <p style={{ color: "var(--text-tertiary)", font: "var(--type-body-sm)" }}>
-                          No matching panels on your agendas yet.
+                          No saved panels yet.
                         </p>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                          {friendSharedEvents.map((ev) => (
-                            <div
-                              key={ev.id}
-                              style={{
-                                backgroundColor: "var(--surface-inset)",
-                                padding: 12,
-                                borderRadius: "var(--r-control)",
-                                border: "1px solid var(--line-hairline)",
-                              }}
-                            >
-                              <div style={{ font: "var(--type-subhead)", color: "#fff" }}>{ev.title}</div>
-                              <div className="cd-data" style={{ color: "var(--text-secondary)", fontSize: 11 }}>
-                                {ev.day} • {ev.timeString} • {ev.location}
+                          {friendEventsList.map((ev) => {
+                            const bothGoing = !!userEventStatusMap[ev.id];
+                            const hasConflict = !bothGoing && checkFriendEventConflict(ev);
+                            return (
+                              <div
+                                key={ev.id}
+                                style={{
+                                  backgroundColor: "var(--surface-inset)",
+                                  padding: 12,
+                                  borderRadius: "var(--r-control)",
+                                  border: "1px solid var(--line-hairline)",
+                                }}
+                              >
+                                <div onClick={() => setActiveDetailItem(ev)} style={{ cursor: "pointer" }}>
+                                  <div style={{ font: "var(--type-subhead)", color: "#fff" }}>{ev.title}</div>
+                                  <div className="cd-data" style={{ color: "var(--text-secondary)", fontSize: 11 }}>
+                                    {ev.day} • {ev.timeString} • {ev.location}
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                                  {bothGoing ? (
+                                    <Badge tone="ok">✓ Both Going</Badge>
+                                  ) : hasConflict ? (
+                                    <Badge tone="soon">⚠️ Conflict</Badge>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleEvent(ev.id, "going", true);
+                                      }}
+                                      className="cd-btn cd-btn-secondary"
+                                      style={{ padding: "4px 10px", fontSize: 12 }}
+                                    >
+                                      + ADD TO MINE
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1947,6 +2086,29 @@ export default function HomePage({
                     >
                       ATTENDING
                     </span>
+                  </div>
+
+                  {/* Squad Privacy */}
+                  <div className="cd-glass-panel" style={{ padding: "12px 16px" }}>
+                    <div className="cd-label" style={{ marginBottom: 8, color: "var(--gold-500)" }}>
+                      SQUAD PRIVACY
+                    </div>
+                    <div className="cd-switch-row">
+                      <div>
+                        <div style={{ font: "var(--type-body-sm)", color: "#fff" }}>Share full schedule with Squad</div>
+                        <div className="cd-data" style={{ color: "var(--text-tertiary)", fontSize: 11 }}>
+                          {shareScheduleState
+                            ? "Squad members can see everything on your schedule."
+                            : "Squad members only see panels you both have saved."}
+                        </div>
+                      </div>
+                      <div
+                        className={`cd-switch ${shareScheduleState ? "checked" : ""}`}
+                        onClick={handleTogglePrivacy}
+                      >
+                        <div className="cd-switch-thumb" />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Passkey Management */}
