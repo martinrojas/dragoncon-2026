@@ -1,13 +1,16 @@
 import type { Context } from "hono";
 import { defineHandler } from "void";
 import { asc, db, eq, like, or, sql } from "void/db";
-import { eventChanges, events } from "../../db/schema";
+import { eventChanges, events } from "../../db/schema.ts";
 
 export const GET = defineHandler(async (c: Context) => {
   const id = c.req.query("id");
   const search = c.req.query("search")?.trim();
   const day = c.req.query("day");
   const track = c.req.query("track");
+  // Repeated params (?excludeTracks=A&excludeTracks=B) so track names containing
+  // commas survive round-tripping.
+  const excludeTracks = (c.req.queries("excludeTracks") ?? []).filter((t) => t.length > 0);
   const location = c.req.query("location");
   const onlyChanged = c.req.query("onlyChanged") === "true";
 
@@ -73,6 +76,13 @@ export const GET = defineHandler(async (c: Context) => {
     if (ev.track) tracksSet.add(ev.track);
     if (ev.day && !ev.day.toLowerCase().includes("tue")) daysSet.add(ev.day);
     if (ev.location) locationsSet.add(ev.location);
+  }
+
+  // Applied after the facet loop above so excluded tracks stay listed in
+  // facets.tracks and the filter sheet can offer them for un-excluding.
+  if (excludeTracks.length > 0) {
+    const excluded = new Set(excludeTracks);
+    allEvents = allEvents.filter((ev) => !ev.track || !excluded.has(ev.track));
   }
 
   return c.json({

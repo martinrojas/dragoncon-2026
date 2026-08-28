@@ -9,7 +9,7 @@ status: stable
 maintainer: CyberDragon Engineering
 sources:
   - id: events-route
-    resource: routes/api/events.ts:1-92
+    resource: routes/api/events.ts:1-104
     title: Event search, filter, and facet handler
   - id: changes-route
     resource: routes/api/changes.ts:1-21
@@ -79,6 +79,7 @@ Query and filter convention schedule events [^events-route].
   - `day` (optional, string): Filter by day string (e.g. `"Thursday, Sep 3"`).
   - `track` (optional, string): Filter by exact fan track name.
   - `location` (optional, string): Substring match on venue location.
+  - `excludeTracks` (optional, repeatable string): Hide events on the named fan tracks and return everything else (`?excludeTracks=Anime&excludeTracks=Horror`). Repeated params rather than a comma-joined list so track names containing commas survive. Applied after facet computation, so excluded tracks remain listed in `facets.tracks` and the client filter sheet can offer them for un-excluding.
   - `onlyChanged` (optional, `"true"` | `"false"`): Return only events with logged changes in `event_changes`.
 - **Response Shape:**
   ```json

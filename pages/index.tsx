@@ -171,7 +171,8 @@ export default function HomePage({
     return "Sat";
   });
   const dayRestoredRef = useRef(false);
-  const [selectedTrack, setSelectedTrack] = useState("");
+  const [excludedTracks, setExcludedTracks] = useState<string[]>([]);
+  const [filtersRestored, setFiltersRestored] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState("");
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [hideEndedPanels, setHideEndedPanels] = useState(false);
@@ -324,6 +325,30 @@ export default function HomePage({
     if (savedDay && days?.includes(savedDay)) setSelectedDay(savedDay);
     dayRestoredRef.current = true;
 
+    try {
+      const savedTracks: unknown = JSON.parse(localStorage.getItem("dc_excluded_tracks") || "[]");
+      if (Array.isArray(savedTracks)) {
+        setExcludedTracks(savedTracks.filter((t): t is string => typeof t === "string"));
+      }
+    } catch {
+      // ignore invalid json
+    }
+    const savedLocation = localStorage.getItem("dc_filter_location");
+    if (savedLocation) setSelectedLocation(savedLocation);
+    try {
+      const savedOptions = JSON.parse(localStorage.getItem("dc_filter_options") || "{}") as {
+        hideEndedPanels?: boolean;
+        hideConflicts?: boolean;
+        walkabilityOnly?: boolean;
+      };
+      setHideEndedPanels(!!savedOptions.hideEndedPanels);
+      setHideConflicts(!!savedOptions.hideConflicts);
+      setWalkabilityOnly(!!savedOptions.walkabilityOnly);
+    } catch {
+      // ignore invalid json
+    }
+    setFiltersRestored(true);
+
     const cleanupErrorCatchers = setupGlobalErrorCatchers(() => {
       const userStr = localStorage.getItem("dc_user");
       if (userStr) {
@@ -373,10 +398,13 @@ export default function HomePage({
 
   // Fetch filtered events
   useEffect(() => {
+    // Wait for the localStorage restore so SSR's initialEvents aren't replaced by a
+    // default-filter fetch that a restored filter would immediately supersede.
+    if (!filtersRestored) return;
     const params = new URLSearchParams();
     if (searchQuery) params.set("search", searchQuery);
     if (selectedDay) params.set("day", selectedDay);
-    if (selectedTrack) params.set("track", selectedTrack);
+    for (const t of excludedTracks) params.append("excludeTracks", t);
     if (selectedLocation) params.set("location", selectedLocation);
 
     setIsSearching(true);
@@ -389,7 +417,18 @@ export default function HomePage({
       })
       .catch(console.error)
       .finally(() => setIsSearching(false));
-  }, [searchQuery, selectedDay, selectedTrack, selectedLocation]);
+  }, [filtersRestored, searchQuery, selectedDay, excludedTracks, selectedLocation]);
+
+  // Persist filter state across reloads (armed after initial restore)
+  useEffect(() => {
+    if (!filtersRestored) return;
+    localStorage.setItem("dc_excluded_tracks", JSON.stringify(excludedTracks));
+    localStorage.setItem("dc_filter_location", selectedLocation);
+    localStorage.setItem(
+      "dc_filter_options",
+      JSON.stringify({ hideEndedPanels, hideConflicts, walkabilityOnly }),
+    );
+  }, [filtersRestored, excludedTracks, selectedLocation, hideEndedPanels, hideConflicts, walkabilityOnly]);
 
   // Persist selected day across reloads (armed after initial restore)
   useEffect(() => {
@@ -1017,6 +1056,9 @@ export default function HomePage({
         if (selectedDay && item.day !== selectedDay) {
           return false;
         }
+        if (item.track && excludedTracks.includes(item.track)) {
+          return false;
+        }
         if (scheduleViewFilter === "Saved" && !userEventStatusMap[item.id]) {
           return false;
         }
@@ -1043,7 +1085,7 @@ export default function HomePage({
         }
         return (a.title || "").localeCompare(b.title || "");
       });
-  }, [eventsList, selectedDay, scheduleViewFilter, userEventStatusMap, hideEndedPanels, hideConflicts, walkabilityOnly, homeVenue]);
+  }, [eventsList, selectedDay, excludedTracks, scheduleViewFilter, userEventStatusMap, hideEndedPanels, hideConflicts, walkabilityOnly, homeVenue]);
 
   // Group events by time slots for TimeRail layout
   const groupedSlots = useMemo(() => {
@@ -1244,7 +1286,7 @@ export default function HomePage({
                 {
                   icon: "sliders-horizontal",
                   label: "Filters",
-                  active: !!selectedTrack || !!selectedLocation || hideEndedPanels || hideConflicts || walkabilityOnly,
+                  active: excludedTracks.length > 0 || !!selectedLocation || hideEndedPanels || hideConflicts || walkabilityOnly,
                   onClick: () => setShowFilterSheet(true),
                 },
                 {
@@ -2342,25 +2384,47 @@ export default function HomePage({
               {/* Fan Tracks multi-selector */}
               <div className="cd-label" style={{ marginBottom: 8 }}>
                 FAN TRACKS
+                {excludedTracks.length > 0 && (
+                  <span style={{ color: "var(--coral-500)", marginLeft: 6 }}>
+                    {excludedTracks.length} HIDDEN
+                  </span>
+                )}
+              </div>
+              <div className="cd-data" style={{ color: "var(--text-tertiary)", fontSize: 11, marginBottom: 8 }}>
+                Tap a track to hide it. Everything not hidden stays visible.
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
                 <Tag
                   accent="var(--gold-500)"
-                  selected={selectedTrack === ""}
-                  onClick={() => setSelectedTrack("")}
+                  selected={excludedTracks.length === 0}
+                  onClick={() => setExcludedTracks([])}
                 >
                   ALL TRACKS
                 </Tag>
-                {tracks.map((t) => (
-                  <Tag
-                    key={t}
-                    accent={TRACK_COLORS[t.toUpperCase()] || "var(--purple-400)"}
-                    selected={selectedTrack === t}
-                    onClick={() => setSelectedTrack(selectedTrack === t ? "" : t)}
-                  >
-                    {t}
-                  </Tag>
-                ))}
+                {tracks.map((t) => {
+                  const isExcluded = excludedTracks.includes(t);
+                  return (
+                    <Tag
+                      key={t}
+                      accent={isExcluded ? "var(--coral-500)" : TRACK_COLORS[t.toUpperCase()] || "var(--purple-400)"}
+                      selected={isExcluded}
+                      onClick={() =>
+                        setExcludedTracks((prev) =>
+                          prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
+                        )
+                      }
+                    >
+                      <span
+                        style={{
+                          textDecoration: isExcluded ? "line-through" : "none",
+                          opacity: isExcluded ? 0.65 : 1,
+                        }}
+                      >
+                        {t}
+                      </span>
+                    </Tag>
+                  );
+                })}
               </div>
 
               {/* Venues Selector */}
@@ -2428,7 +2492,7 @@ export default function HomePage({
               <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                 <button
                   onClick={() => {
-                    setSelectedTrack("");
+                    setExcludedTracks([]);
                     setSelectedLocation("");
                     setHideEndedPanels(false);
                     setHideConflicts(false);

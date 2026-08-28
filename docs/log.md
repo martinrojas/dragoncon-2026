@@ -3,6 +3,21 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-28 — Track Exclusion Filters & Persisted Filter State
+
+- **Type:** Feature (schedule filtering — "show everything except these tracks", filter preferences survive reloads).
+- **Capabilities Added:**
+  - **Track Exclusion (`/api/events`):** New repeatable `excludeTracks` query param (`?excludeTracks=Anime&excludeTracks=Horror`) hides the named tracks and returns everything else. Repeated params (not a comma-joined list) so track names containing commas round-trip intact. Exclusion is applied in-memory *after* the facet loop, so excluded tracks stay in `facets.tracks` and the filter sheet can still offer them for un-excluding — one query instead of a second unfiltered facets request.
+  - **Tap-to-Hide Filter Sheet (`pages/index.tsx`):** Replaced single-select `selectedTrack` with `excludedTracks: string[]`. Track pills toggle into an excluded state (coral accent + strikethrough), the section header shows an `N HIDDEN` badge, and `ALL TRACKS` / `Reset` clear all exclusions. `filteredEvents` also drops excluded tracks client-side so the SSR payload doesn't flash hidden panels before the first fetch returns.
+  - **Persisted Filter State:** `dc_excluded_tracks`, `dc_filter_location`, and `dc_filter_options` (`hideEndedPanels`, `hideConflicts`, `walkabilityOnly`) persist to `localStorage` following the `dc_selected_day` pattern — defaults in `useState`, restore in the mount effect, persist effect armed only after restore.
+- **Runtime Learnings & Gotchas:**
+  - **Restore Gate Must Be State, Not a Ref:** The events fetch effect is gated on a `filtersRestored` *state* flag rather than a ref. A ref would not re-trigger the effect, so a user with no stored filters would never fetch at all. Gating also removes the wasted mount fetch — SSR already supplies `initialEvents`.
+  - **Route Imports Under the Test Runner:** `tests/*.test.ts` run through `node --experimental-strip-types`, which does not resolve extensionless relative imports. Every route currently exercised by a test imports `../../db/schema.ts` with the extension; `routes/api/events.ts` used the extensionless form and failed with `ERR_MODULE_NOT_FOUND` on import. Untested routes (`auth.ts`, `changes.ts`, `export-ics.ts`, `schedule.ts`, `auth/passkey.ts`) still use the extensionless form and will need the same fix when tests reach them.
+  - **Stale Bundle During Browser Verification:** A browser tab held open across the edit kept serving the pre-change module — the new filter-sheet markup was absent from the DOM even though the source had changed. A full `tab.goto` reload fixed it. Cause not isolated: the app registers `/sw.js` in dev and precaches `/`, so an already-installed service worker is the likelier culprit than Vite HMR (same failure mode as the 2026-08-26 feedback-triage entry, where unregistering the SW revealed the new admin bundle). If a reload alone stops working, unregister the SW and clear caches before suspecting the bundler.
+- **Files Modified:** `routes/api/events.ts`, `pages/index.tsx`, `tests/events-filter.test.ts` (new), `public/sw.js` (bumped to `dragoncon-pwa-v19`), `docs/interfaces/api-contracts.md`.
+- **Verification:** 136/136 unit tests pass (`pnpm test`), production build clean (`pnpm build`). Browser-verified on the dev server: hiding "Main Programming" took the day from 4 → 2 panels with `1 HIDDEN` and strikethrough; after a full reload the exclusion persisted (still 2 panels, track still listed and struck); `Reset` returned 4 panels and cleared `dc_excluded_tracks` to `[]`.
+
+---
 ## 2026-08-28 — Squad Invite Links, Event Deep Linking & Detailed Friend Schedule Browser
 
 - **Type:** Feature (social squad collaboration, deep linking, privacy controls).
