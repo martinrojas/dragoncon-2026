@@ -365,8 +365,8 @@ export default function HomePage({
     const eventParam = new URLSearchParams(window.location.search).get("event");
     if (eventParam) {
       fetch(`/api/events?id=${encodeURIComponent(eventParam)}`)
-        .then((res) => res.json())
-        .then((data: { success: boolean; event?: EventItem }) => {
+        .then((res) => res.json() as Promise<{ success: boolean; event?: EventItem }>)
+        .then((data) => {
           if (data.success && data.event) {
             setActiveDetailItem(data.event);
           }
@@ -939,12 +939,12 @@ export default function HomePage({
         triggerToast(newValue ? "Full schedule shared with Squad" : "Schedule set to private (mutual overlap only)", "ok");
       } else {
         setShareScheduleState(!newValue);
-        triggerToast(data.error || "Failed to update privacy setting", "error");
+        triggerToast(data.error || "Failed to update privacy setting", "warn");
       }
     } catch (e: unknown) {
       console.error("Failed to update privacy setting", e);
       setShareScheduleState(!newValue);
-      triggerToast("Network error updating privacy setting", "error");
+      triggerToast("Network error updating privacy setting", "warn");
     }
   };
 

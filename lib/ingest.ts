@@ -1,5 +1,4 @@
 import * as cheerio from "cheerio";
-import type { InferInsertModel } from "drizzle-orm";
 import { and, db, eq, inArray } from "void/db";
 import { eventChanges, events, ingestionRuns } from "../db/schema.ts";
 import { getRuntimeBinding } from "void/_env";
@@ -629,8 +628,8 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       }
     }
 
-    type NewEventRow = InferInsertModel<typeof events>;
-    type NewChangeRow = InferInsertModel<typeof eventChanges>;
+    type NewEventRow = typeof events.$inferInsert;
+    type NewChangeRow = typeof eventChanges.$inferInsert;
     const pendingCreates: Array<{ event: NewEventRow; change: NewChangeRow }> = [];
     const rehashRows: Array<{ id: string; contentHash: string }> = [];
     const touchIds: string[] = [];
