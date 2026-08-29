@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { cleanUrlParam } from "../../../lib/squadUtils.ts";
+import { cleanUrlParam, isSelfInvite } from "../../../lib/squadUtils.ts";
 import type { EventItem, User, UserEventItem } from "../homeTypes.ts";
 
 export interface UseSquadOptions {
@@ -49,7 +49,7 @@ export function useSquad({ currentUser, triggerToast, agendaItems, updateCurrent
 
   // Clear a self-invite (user opened their own squad share link) and clean the URL.
   useEffect(() => {
-    if (currentUser && pendingInvite && pendingInvite.toLowerCase() === currentUser.username.toLowerCase()) {
+    if (isSelfInvite(currentUser?.username, pendingInvite)) {
       setPendingInvite(null);
       sessionStorage.removeItem("dc_pending_invite");
       cleanInviteUrlParam();
