@@ -1,5 +1,6 @@
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import type { IngestionRun } from "./adminTypes";
+import { copyText } from "../../lib/share";
 
 interface AdminRunLogModalProps {
   run: IngestionRun | null;
@@ -7,7 +8,17 @@ interface AdminRunLogModalProps {
 }
 
 export function AdminRunLogModal({ run, onClose }: AdminRunLogModalProps): JSX.Element | null {
+  // Hooks must run before the null guard below, so this cannot move inside it.
+  const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
+
   if (!run) return null;
+
+  const handleCopy = async (): Promise<void> => {
+    if (!run.log) return;
+    const ok = await copyText(run.log);
+    setCopyState(ok ? "ok" : "fail");
+    setTimeout(() => setCopyState("idle"), 2000);
+  };
 
   return (
     <div
@@ -41,14 +52,33 @@ export function AdminRunLogModal({ run, onClose }: AdminRunLogModalProps): JSX.E
           <h3 style={{ font: "var(--type-heading)", color: "var(--gold-400)", fontSize: 16 }}>
             📜 RUN #{run.id} LOG OUTPUT
           </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="cd-btn cd-btn-ghost"
-            style={{ padding: "4px 8px", fontSize: 12 }}
-          >
-            ✕ Close
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              onClick={handleCopy}
+              disabled={!run.log}
+              className="cd-btn cd-btn-ghost"
+              style={{
+                padding: "4px 8px",
+                fontSize: 12,
+                fontFamily: "var(--font-mono)",
+                opacity: run.log ? 1 : 0.4,
+                cursor: run.log ? "pointer" : "not-allowed",
+                color: copyState === "ok" ? "var(--gold-400)" : copyState === "fail" ? "var(--coral-500)" : undefined,
+              }}
+              title="Copy the full log to the clipboard"
+            >
+              {copyState === "ok" ? "✓ Copied" : copyState === "fail" ? "✕ Copy failed" : "⧉ Copy log"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="cd-btn cd-btn-ghost"
+              style={{ padding: "4px 8px", fontSize: 12 }}
+            >
+              ✕ Close
+            </button>
+          </div>
         </div>
 
         <div
