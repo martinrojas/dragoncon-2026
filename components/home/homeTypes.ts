@@ -48,6 +48,15 @@ export interface EventChange {
   detectedAt: string;
 }
 
+export interface NavTab {
+  id: string;
+  label: string;
+  icon: string;
+  active: boolean;
+  badge?: number;
+  onClick: () => void;
+}
+
 export interface ToastState {
   message: string;
   type: "ok" | "warn";
