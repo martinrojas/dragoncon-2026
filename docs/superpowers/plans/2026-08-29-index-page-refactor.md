@@ -1,7 +1,7 @@
 # Index Page Refactor & Decomposition Implementation Plan
 
+> **Status:** Complete (Implemented in commits `9af6400`..`2cc9b0b`)  
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Decompose the monolithic 2,701-line `pages/index.tsx` into focused custom hooks, domain utility libraries, and presentation subcomponents while establishing full unit test coverage for extracted schedule and squad logic.
 
 **Architecture:** Extract pure domain logic into `lib/scheduleUtils.ts` and `lib/squadUtils.ts`, extract stateful logic into 5 single-responsibility custom hooks under `components/home/hooks/`, isolate 5 full-screen tabs under `components/home/tabs/`, extract modals under `components/home/modals/`, and simplify `pages/index.tsx` into a lightweight ~120-line coordinator.
@@ -31,7 +31,7 @@
   - `lib/scheduleUtils.ts`: `parseVenueRoom(locationStr)`, `getDayEyebrow(dayStr)`, `getPrecedingVenue(currentEvent, savedEvents)`, `checkEventConflict(eventId, conflicts)`, `filterEvents(events, options)`, `groupEventsBySlot(events, timeFormat)`, `calculateDailyWalkMinutes(events)`
   - `lib/squadUtils.ts`: `calculateMutualOverlap(userEventIds, friendEvents)`, `cleanUrlParam(paramName)`, `isSelfInvite(username, inviteCode)`
 
-- [ ] **Step 1: Write failing unit tests for schedule domain utilities**
+- [x] **Step 1: Write failing unit tests for schedule domain utilities**
 
 Create `tests/schedule-logic.test.ts`:
 ```ts
@@ -88,7 +88,7 @@ test("calculateDailyWalkMinutes sums consecutive venue walk times", () => {
 });
 ```
 
-- [ ] **Step 2: Write failing unit tests for squad domain utilities**
+- [x] **Step 2: Write failing unit tests for squad domain utilities**
 
 Create `tests/squad-logic.test.ts`:
 ```ts
@@ -114,12 +114,12 @@ test("isSelfInvite identifies when invite username matches current user", () => 
 });
 ```
 
-- [ ] **Step 3: Run tests to verify failures**
+- [x] **Step 3: Run tests to verify failures**
 
 Run: `pnpm vitest run tests/schedule-logic.test.ts tests/squad-logic.test.ts`
 Expected: FAIL (modules not found)
 
-- [ ] **Step 4: Implement `lib/scheduleUtils.ts` and `lib/squadUtils.ts`**
+- [x] **Step 4: Implement `lib/scheduleUtils.ts` and `lib/squadUtils.ts`**
 
 Create `lib/scheduleUtils.ts`:
 ```ts
@@ -216,12 +216,12 @@ export function cleanUrlParam(paramName: string): void {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm vitest run tests/schedule-logic.test.ts tests/squad-logic.test.ts`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/scheduleUtils.ts lib/squadUtils.ts tests/schedule-logic.test.ts tests/squad-logic.test.ts
@@ -245,7 +245,7 @@ git commit -m "feat(domain): extract schedule and squad pure domain utilities wi
   - `AuthModal.tsx`: `<AuthModal isOpen={isOpen} onClose={onClose} ... />`
   - `ScheduleFilterSheet.tsx`: `<ScheduleFilterSheet isOpen={isOpen} onClose={onClose} ... />`
 
-- [ ] **Step 1: Create `components/home/homeTypes.ts`**
+- [x] **Step 1: Create `components/home/homeTypes.ts`**
 
 Extract standard interfaces from `pages/index.tsx`:
 ```ts
@@ -326,7 +326,7 @@ export const TRACK_COLORS: Record<string, string> = {
 };
 ```
 
-- [ ] **Step 2: Create `components/home/modals/ToastNotification.tsx`**
+- [x] **Step 2: Create `components/home/modals/ToastNotification.tsx`**
 
 ```tsx
 import type { JSX } from "react";
@@ -367,16 +367,16 @@ export function ToastNotification({ toast }: ToastNotificationProps): JSX.Elemen
 }
 ```
 
-- [ ] **Step 3: Create `components/home/modals/AuthModal.tsx` & `components/home/modals/ScheduleFilterSheet.tsx`**
+- [x] **Step 3: Create `components/home/modals/AuthModal.tsx` & `components/home/modals/ScheduleFilterSheet.tsx`**
 
 Extract JSX sheets from `pages/index.tsx:2369-2615`.
 
-- [ ] **Step 4: Run typecheck / build to verify components compile**
+- [x] **Step 4: Run typecheck / build to verify components compile**
 
 Run: `pnpm build`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add components/home/homeTypes.ts components/home/modals/
@@ -402,17 +402,17 @@ git commit -m "feat(ui): extract home modal sheets and toast notification compon
   - `useSquad`: Returns `friendsList`, friend comparison, invite accept/dismiss, and squad privacy toggle.
   - `useAppSyncAndPrefs`: Returns update sync status, diff list, PWA installation, and con preferences.
 
-- [ ] **Step 1: Implement `useHomeAuth.ts`**
-- [ ] **Step 2: Implement `useScheduleFilters.ts`**
-- [ ] **Step 3: Implement `useAgenda.ts`**
-- [ ] **Step 4: Implement `useSquad.ts`**
-- [ ] **Step 5: Implement `useAppSyncAndPrefs.ts`**
-- [ ] **Step 6: Run tests and typecheck**
+- [x] **Step 1: Implement `useHomeAuth.ts`**
+- [x] **Step 2: Implement `useScheduleFilters.ts`**
+- [x] **Step 3: Implement `useAgenda.ts`**
+- [x] **Step 4: Implement `useSquad.ts`**
+- [x] **Step 5: Implement `useAppSyncAndPrefs.ts`**
+- [x] **Step 6: Run tests and typecheck**
 
 Run: `pnpm test && pnpm build`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add components/home/hooks/
@@ -438,17 +438,17 @@ git commit -m "feat(hooks): extract custom hooks for auth, filters, agenda, squa
   - `<ChangesTab />`: Renders chronological schedule diff feed.
   - `<ProfileTab />`: Renders user profile, Passkey manager, preferences switches, and feedback trigger.
 
-- [ ] **Step 1: Implement `ScheduleTab.tsx`**
-- [ ] **Step 2: Implement `AgendaTab.tsx`**
-- [ ] **Step 3: Implement `SquadTab.tsx`**
-- [ ] **Step 4: Implement `ChangesTab.tsx`**
-- [ ] **Step 5: Implement `ProfileTab.tsx`**
-- [ ] **Step 6: Run build and tests**
+- [x] **Step 1: Implement `ScheduleTab.tsx`**
+- [x] **Step 2: Implement `AgendaTab.tsx`**
+- [x] **Step 3: Implement `SquadTab.tsx`**
+- [x] **Step 4: Implement `ChangesTab.tsx`**
+- [x] **Step 5: Implement `ProfileTab.tsx`**
+- [x] **Step 6: Run build and tests**
 
 Run: `pnpm test && pnpm build`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add components/home/tabs/
@@ -464,15 +464,13 @@ git commit -m "feat(ui): extract individual tab components for schedule, agenda,
 - Modify: `public/sw.js`
 - Modify: `docs/log.md`
 
-- [ ] **Step 1: Simplify `pages/index.tsx` into a ~120-line coordinator calling the extracted hooks and tabs**
-- [ ] **Step 2: Bump PWA cache version in `public/sw.js` (`dragoncon-pwa-v23` $\to$ `dragoncon-pwa-v24`)**
-- [ ] **Step 3: Run full test suite and build verification**
-
-Run: `pnpm test && pnpm build`
+- [x] **Step 1: Simplify `pages/index.tsx` into a ~120-line coordinator calling the extracted hooks and tabs**
+- [x] **Step 2: Bump PWA cache version in `public/sw.js` (`dragoncon-pwa-v23` $\to$ `dragoncon-pwa-v24`)**
+- [x] **Step 3: Run full test suite and build verification**
 Expected: All 140+ unit tests pass, zero TypeScript/LSP errors, clean SSR and client bundles.
 
-- [ ] **Step 4: Update session log in `docs/log.md`**
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Update session log in `docs/log.md`**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pages/index.tsx public/sw.js docs/log.md

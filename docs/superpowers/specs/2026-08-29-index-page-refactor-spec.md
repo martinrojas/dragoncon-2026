@@ -1,6 +1,6 @@
 # Spec: Index Page Architecture & Decomposition
 
-> **Status:** Draft  
+> **Status:** Implemented (Verified: 150/150 unit tests passing, clean SSR/client production build)  
 > **Date:** 2026-08-29  
 > **Target:** `pages/index.tsx` (and newly extracted modules under `components/home/`)  
 > **Author:** CyberDragon Engineering  
