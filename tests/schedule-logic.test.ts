@@ -12,6 +12,7 @@ import {
   getPrecedingVenue,
   checkEventConflict,
   calculateDailyWalkMinutes,
+  parseSpeakers,
   type EventItem,
   type Conflict,
 } from "../lib/scheduleUtils.ts";
@@ -76,4 +77,33 @@ test("calculateDailyWalkMinutes sums consecutive venue walk times", () => {
     { id: "3", location: "Hilton Atlanta" },
   ];
   expect(calculateDailyWalkMinutes(events)).toBe(9); // Hyatt->Marriott (4) + Marriott->Hilton (5)
+});
+
+test("parseSpeakers parses JSON array strings, comma strings, and strips legacy role prefixes and newlines", () => {
+  // Raw ingested format from live Core-Apps upstream with newlines and role prefix
+  const rawJsonWithRole = JSON.stringify([
+    "Speaker\n                          The Blibbering Humdingers",
+    "Speaker\n                          Brobdingnagian Bards",
+    "Speaker\n                          Clearly Guilty",
+  ]);
+  expect(parseSpeakers(rawJsonWithRole)).toEqual([
+    "The Blibbering Humdingers",
+    "Brobdingnagian Bards",
+    "Clearly Guilty",
+  ]);
+
+  // Moderator and DJ role prefixes
+  expect(parseSpeakers('["Moderator\\n                          Jody Lynn Nye"]')).toEqual(["Jody Lynn Nye"]);
+  expect(parseSpeakers('["DJ\\n                          Brendon Lee"]')).toEqual(["Brendon Lee"]);
+
+  // Clean JSON array format
+  expect(parseSpeakers(JSON.stringify(["Tim Griffin", "Emily Henry"]))).toEqual(["Tim Griffin", "Emily Henry"]);
+
+  // Comma-separated strings (seed data)
+  expect(parseSpeakers("Dr. Coral Vance, Maya Lindqvist")).toEqual(["Dr. Coral Vance", "Maya Lindqvist"]);
+
+  // Null, empty, or empty JSON array
+  expect(parseSpeakers(null)).toEqual([]);
+  expect(parseSpeakers("")).toEqual([]);
+  expect(parseSpeakers("[]")).toEqual([]);
 });

@@ -1523,3 +1523,74 @@ test("explicitly requested past days bypass the skip filter", async () => {
   assert.strictEqual(result.errors, 0);
   assert.ok(result.log.some((l) => l.includes("Fetching day listing: Sep++3...")));
 });
+
+test("ingest parses Core-Apps multi-line speaker markup cleanly without role prefixes or newlines", async () => {
+  const day = "Thursday, Sep  3";
+  const dayParam = "Sep++3";
+  const eventId = "aaaa8888";
+
+  const coreAppsDetailHtml = `<html><body>
+    <table>
+      <tr><td>Location</td><td>Hyatt Hanover FG</td></tr>
+      <tr><td>Date</td><td>Thursday, Sep  3  7:00 PM</td></tr>
+      <tr><td>Duration</td><td>1 hour</td></tr>
+    </table>
+    <div class="section-about"><p>Filk track intro</p></div>
+    <div class="section_heading">Tracks</div><a>Filk Music</a>
+    <div class="section section-about">
+      <div class="section_inner">
+        <h2 class="section_heading">Speakers</h2>
+        <div class="btn_list_holder">
+          <ul class="btn_list">
+            <li>
+              <div class="li_layout">
+                <div class="li_fav"><a class="fav-star"><i class="icon-star-empty"></i></a></div>
+                <a class="content" href="/dragoncon26/speakers/1">
+                  <div class="li_btn_inner">
+                    <div class="li_inner_content">
+                      <div class="line one">Speaker</div>
+                      <div class="line two">The Blibbering Humdingers</div>
+                      <div class="line three"></div>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            </li>
+            <li>
+              <div class="li_layout">
+                <div class="li_fav"><a class="fav-star"><i class="icon-star-empty"></i></a></div>
+                <a class="content" href="/dragoncon26/speakers/2">
+                  <div class="li_btn_inner">
+                    <div class="li_inner_content">
+                      <div class="line one">Moderator</div>
+                      <div class="line two">Brobdingnagian Bards</div>
+                      <div class="line three"></div>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </body></html>`;
+
+  const routes = new Map<string, string>();
+  routes.set(
+    `${BASE_URL}/events/view_by_day?day=${dayParam}`,
+    dayListingHtml(day, [{ id: eventId, title: "What Is Filk?", timeStr: "7:00 PM - 8:00 PM" }]),
+  );
+  routes.set(`${BASE_URL}/event/${eventId}`, coreAppsDetailHtml);
+
+  const result = await withRuntimeEnv({ DB: sharedFakeD1 }, () =>
+    withMockedFetch(routes, () => runIngestion({ mode: "sync", days: [dayParam] })),
+  );
+
+  assert.strictEqual(result.errors, 0);
+  const stored = getEvent(eventId);
+  assert.strictEqual(
+    stored?.speakers,
+    JSON.stringify(["The Blibbering Humdingers", "Brobdingnagian Bards"]),
+  );
+});

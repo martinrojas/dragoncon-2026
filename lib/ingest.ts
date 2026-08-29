@@ -515,8 +515,18 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
         $d(".section_heading").each((_, heading) => {
           if ($d(heading).text().trim() === "Speakers") {
             $d(heading).parent().find("a").each((_, spk) => {
-              const name = $d(spk).text().trim();
-              if (name && name !== "Speakers") speakers.push(name);
+              const $spk = $d(spk);
+              const lineTwo = $spk.find(".line.two").text().trim();
+              const lineOne = $spk.find(".line.one").text().trim();
+              const rawText = $spk.text().trim();
+              const nameCandidate =
+                lineTwo ||
+                (lineOne && !/^(?:Speaker|Speakers|Moderator|Panelist|Guest|DJ)$/i.test(lineOne) ? lineOne : "") ||
+                rawText;
+              if (nameCandidate && nameCandidate !== "Speakers" && nameCandidate !== "Speaker") {
+                const cleaned = nameCandidate.replace(/\s+/g, " ").trim();
+                if (cleaned) speakers.push(cleaned);
+              }
             });
           }
         });

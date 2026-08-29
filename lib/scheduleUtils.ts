@@ -68,3 +68,26 @@ export function calculateDailyWalkMinutes(events: EventItem[]): number {
   }
   return total;
 }
+
+export function parseSpeakers(speakers?: string | null): string[] {
+  if (!speakers) return [];
+  let list: string[] = [];
+  const trimmed = speakers.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        list = parsed.map((s) => String(s));
+      }
+    } catch {
+      list = trimmed.slice(1, -1).split(",");
+    }
+  } else {
+    list = trimmed.split(",");
+  }
+  return list
+    .map((s) => s.replace(/^["'\s]+|["'\s]+$/g, ""))
+    .map((s) => s.replace(/^(?:Speaker|Moderator|Panelist|Guest|DJ)\s+/i, ""))
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
