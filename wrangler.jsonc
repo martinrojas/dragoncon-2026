@@ -1,7 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "dragoncon-2026",
-  "account_id": "d286b4524e2403f3b6e3135ab14972ba",
   "main": "dist/ssr/index.js",
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],

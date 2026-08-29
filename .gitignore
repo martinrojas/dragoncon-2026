@@ -8,3 +8,4 @@ reference/
 .superpowers/
 .env
 CLAUDE.local.md
+.dev.vars*
