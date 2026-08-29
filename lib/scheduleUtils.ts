@@ -1,17 +1,11 @@
 import { calculateWalkTime } from "./walktime.ts";
+import type { EventItem as HomeEventItem, Conflict as HomeConflict } from "../components/home/homeTypes.ts";
 
-export interface EventItem {
-  id: string;
-  title?: string | null;
-  location?: string | null;
-  day?: string | null;
-  startsAt?: string | null;
-}
-
-export interface Conflict {
-  event1Id: string;
-  event2Id: string;
-}
+// Narrow slices of the canonical home types — these pure functions only
+// touch a handful of fields, so callers can pass either the full
+// `components/home/homeTypes.ts` shape or a minimal test fixture.
+export type EventItem = Pick<HomeEventItem, "id" | "location" | "day" | "startsAt">;
+export type Conflict = Pick<HomeConflict, "event1Id" | "event2Id">;
 
 export function parseVenueRoom(locationStr: string | null | undefined): {
   venue: string;
