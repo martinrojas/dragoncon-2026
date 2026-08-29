@@ -1,7 +1,6 @@
-import { useEffect, useState, useMemo, type SyntheticEvent } from "react";
+import { useState, useCallback } from "react";
 import { AppBar } from "../components/CyberDragonUi";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { setupGlobalErrorCatchers } from "../lib/errorReporting";
 import { APP_VERSION } from "../lib/version";
 import type { Props } from "./admin.server";
 import {
@@ -21,6 +20,10 @@ import { AdminDiffSummary } from "../components/admin/AdminDiffSummary";
 import { AdminTerminalConsole } from "../components/admin/AdminTerminalConsole";
 import { AdminPastRunsTable } from "../components/admin/AdminPastRunsTable";
 import { AdminFeedbackList } from "../components/admin/AdminFeedbackList";
+import { useAdminAuth } from "../components/admin/useAdminAuth";
+import { useAdminDashboardData } from "../components/admin/useAdminDashboardData";
+import { useAdminIngest } from "../components/admin/useAdminIngest";
+import { useAdminFeedback } from "../components/admin/useAdminFeedback";
 
 export {
   formatRunTimestamp,
@@ -34,285 +37,66 @@ export {
 };
 
 export default function AdminPage(props: Props) {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    if (typeof window !== "undefined") {
-      const savedUser = localStorage.getItem("dc_user");
-      if (savedUser) {
-        try {
-          return JSON.parse(savedUser) as User;
-        } catch {
-          return null;
-        }
-      }
-    }
-    return null;
-  });
-  const [token, setToken] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("dc_token") || "";
-    }
-    return "";
-  });
+  const {
+    pastRuns,
+    dbStats,
+    feedbackItems,
+    setFeedbackItems,
+    refreshDashboardData,
+  } = useAdminDashboardData(props);
 
-  // Auth form state
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginError, setLoginError] = useState("");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const onAdminAuthenticated = useCallback(
+    (authToken: string) => {
+      refreshDashboardData(authToken);
+    },
+    [refreshDashboardData],
+  );
 
-  // Controls state
-  const [syncMode, setSyncMode] = useState<"sync" | "dry-run" | "hard-resync">("sync");
-  const [selectedDays, setSelectedDays] = useState<string[]>(["All"]);
-  // Sized for the largest single con day (~650 upstream events) under the
-  // Workers subrequests=2000 ceiling; still user-throttleable per run.
-  const [throttleLimit, setThrottleLimit] = useState<number | undefined>(1900);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [showHardResyncModal, setShowHardResyncModal] = useState(false);
-  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const {
+    currentUser,
+    token,
+    loginUsername,
+    loginPassword,
+    loginError,
+    isLoggingIn,
+    setLoginUsername,
+    setLoginPassword,
+    handleLoginSubmit,
+  } = useAdminAuth(onAdminAuthenticated);
 
-  // Results state
-  const [latestResult, setLatestResult] = useState<IngestResult | null>(null);
-  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
-  const [logFilter, setLogFilter] = useState<"all" | "created" | "updated" | "errors">("all");
+  const onSyncSuccess = useCallback(() => {
+    return refreshDashboardData(token);
+  }, [refreshDashboardData, token]);
 
-  // History & stats state
-  const [pastRuns, setPastRuns] = useState<IngestionRun[]>(props.initialRuns || []);
-  const [dbStats, setDbStats] = useState<AdminDbStats>({
-    totalActiveEvents: props.totalActiveEvents ?? props.totalEvents ?? 0,
-    totalDeletedEvents: props.totalDeletedEvents ?? 0,
-    eventsByDay: props.eventsByDay || {},
-    totalUsers: props.totalUsers ?? 0,
-  });
+  const {
+    syncMode,
+    selectedDays,
+    throttleLimit,
+    isSyncing,
+    showHardResyncModal,
+    syncErrorMessage,
+    latestResult,
+    logFilter,
+    filteredLogs,
+    setSyncMode,
+    setThrottleLimit,
+    setShowHardResyncModal,
+    setLogFilter,
+    handleDayChipClick,
+    handleStartSyncClick,
+    executeSync,
+  } = useAdminIngest(token, onSyncSuccess);
 
-  const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
-  const [feedbackFilter, setFeedbackFilter] = useState<"new" | "all">("new");
-  const [feedbackBusyId, setFeedbackBusyId] = useState<string | null>(null);
+  const {
+    feedbackFilter,
+    setFeedbackFilter,
+    feedbackBusyId,
+    visibleFeedback,
+    updateFeedbackStatus,
+  } = useAdminFeedback(token, feedbackItems, setFeedbackItems);
+
   const [selectedRunForLogModal, setSelectedRunForLogModal] = useState<IngestionRun | null>(null);
 
-  // Load auth state from localStorage on mount
-  useEffect(() => {
-    const savedUser = localStorage.getItem("dc_user");
-    const savedToken = localStorage.getItem("dc_token");
-    if (savedUser && savedToken) {
-      try {
-        const parsed = JSON.parse(savedUser) as User;
-        setCurrentUser(parsed);
-        setToken(savedToken);
-        if (parsed.role === "admin") {
-          refreshDashboardData(savedToken);
-        }
-      } catch {
-        // ignore parse error
-      }
-    }
-
-    const cleanupErrorCatchers = setupGlobalErrorCatchers(() => {
-      const userStr = localStorage.getItem("dc_user");
-      if (userStr) {
-        try {
-          return JSON.parse(userStr);
-        } catch {
-          // ignore
-        }
-      }
-      return null;
-    }, APP_VERSION);
-
-    return () => {
-      cleanupErrorCatchers();
-    };
-  }, []);
-
-  // Handle client-side login inside Admin Access Denied view
-  const handleLoginSubmit = async (e: SyntheticEvent) => {
-    e.preventDefault();
-    if (!loginUsername.trim() || !loginPassword.trim()) {
-      setLoginError("Username and password are required.");
-      return;
-    }
-    setLoginError("");
-    setIsLoggingIn(true);
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "login",
-          username: loginUsername.trim(),
-          password: loginPassword.trim(),
-        }),
-      });
-      const data = (await res.json()) as { success: boolean; user?: User; token?: string; error?: string };
-      if (data.success && data.user && data.token) {
-        if (data.user.role !== "admin") {
-          setLoginError("Access denied: User account is not an administrator.");
-        } else {
-          setCurrentUser(data.user);
-          setToken(data.token);
-          localStorage.setItem("dc_user", JSON.stringify(data.user));
-          localStorage.setItem("dc_token", data.token);
-          setLoginUsername("");
-          setLoginPassword("");
-        }
-      } else {
-        setLoginError(data.error || "Login failed.");
-      }
-    } catch {
-      setLoginError("An unexpected error occurred.");
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  // Day chip toggle handler
-  const handleDayChipClick = (val: string) => {
-    if (val === "All") {
-      setSelectedDays(["All"]);
-      return;
-    }
-    let updated: string[];
-    if (selectedDays.includes("All")) {
-      updated = [val];
-    } else if (selectedDays.includes(val)) {
-      updated = selectedDays.filter((d) => d !== val);
-      if (updated.length === 0) updated = ["All"];
-    } else {
-      updated = [...selectedDays, val];
-      if (updated.length === 5) updated = ["All"];
-    }
-    setSelectedDays(updated);
-  };
-
-  // Refresh runs and stats from API
-  const refreshDashboardData = async (authToken: string) => {
-    try {
-      const [runsRes, statsRes, feedbackRes] = await Promise.all([
-        fetch("/api/admin/runs", { headers: { Authorization: `Bearer ${authToken}` } }),
-        fetch("/api/admin/stats", { headers: { Authorization: `Bearer ${authToken}` } }),
-        fetch("/api/feedback", { headers: { Authorization: `Bearer ${authToken}` } }),
-      ]);
-      const runsData = (await runsRes.json()) as { success: boolean; runs?: IngestionRun[] };
-      const statsData = (await statsRes.json()) as {
-        success: boolean;
-        stats?: AdminDbStats;
-      };
-      if (runsData.success && runsData.runs) {
-        setPastRuns(runsData.runs);
-      }
-      if (statsData.success && statsData.stats) {
-        setDbStats(statsData.stats);
-      }
-      const feedbackData = (await feedbackRes.json().catch(() => ({}))) as {
-        success?: boolean;
-        feedback?: FeedbackItem[];
-      };
-      if (feedbackData.success && feedbackData.feedback) {
-        setFeedbackItems(feedbackData.feedback);
-      }
-    } catch (err) {
-      console.error("Failed to refresh admin dashboard data", err);
-    }
-  };
-
-  // Apply a triage transition to a feedback item
-  const updateFeedbackStatus = async (id: string, status: string) => {
-    if (!token) return;
-    setFeedbackBusyId(id);
-    try {
-      const res = await fetch(`/api/feedback/${id}`, {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { success?: boolean; feedback?: FeedbackItem };
-      if (data.success && data.feedback) {
-        const updated = data.feedback;
-        setFeedbackItems((items) => items.map((it) => (it.id === id ? updated : it)));
-      }
-    } catch (err) {
-      console.error("Failed to update feedback status", err);
-    } finally {
-      setFeedbackBusyId(null);
-    }
-  };
-
-  // Items shown in the attendee feedback panel based on triage filter
-  const visibleFeedback =
-    feedbackFilter === "all" ? feedbackItems : feedbackItems.filter((item) => item.status === "new");
-
-  // Trigger sync execution
-  const executeSync = async () => {
-    if (!token) return;
-    setIsSyncing(true);
-    setSyncErrorMessage(null);
-    setTerminalLogs([`[SYSTEM] Triggering sync run (mode: ${syncMode})...`]);
-
-    const targetDays = selectedDays.includes("All")
-      ? undefined
-      : selectedDays;
-
-    try {
-      const res = await fetch("/api/admin/ingest", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          mode: syncMode,
-          days: targetDays,
-          maxDetailFetches: throttleLimit,
-        }),
-      });
-
-      const data = (await res.json()) as {
-        success: boolean;
-        runId?: number;
-        result?: IngestResult;
-        error?: string;
-      };
-
-      if (data.success && data.result) {
-        setLatestResult(data.result);
-        const logs = data.result.log || [];
-        setTerminalLogs(logs.length > 0 ? logs : ["Sync execution completed cleanly."]);
-        await refreshDashboardData(token);
-      } else {
-        const errMsg = data.error || "Sync execution failed.";
-        setSyncErrorMessage(errMsg);
-        setTerminalLogs((prev) => [...prev, `! [ERROR] ${errMsg}`]);
-      }
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setSyncErrorMessage(errMsg);
-      setTerminalLogs((prev) => [...prev, `! [ERROR] Network or server error: ${errMsg}`]);
-    } finally {
-      setIsSyncing(false);
-      setShowHardResyncModal(false);
-    }
-  };
-
-  const handleStartSyncClick = () => {
-    if (syncMode === "hard-resync") {
-      setShowHardResyncModal(true);
-    } else {
-      executeSync();
-    }
-  };
-
-  // Filtered log lines
-  const filteredLogs = useMemo(() => {
-    if (logFilter === "all") return terminalLogs;
-    if (logFilter === "created") return terminalLogs.filter((l) => l.startsWith("+"));
-    if (logFilter === "updated") return terminalLogs.filter((l) => l.startsWith("~"));
-    if (logFilter === "errors")
-      return terminalLogs.filter(
-        (l) => l.startsWith("!") || l.startsWith("-") || l.toLowerCase().includes("error")
-      );
-    return terminalLogs;
-  }, [terminalLogs, logFilter]);
-
-  // Access Denied Render
   if (!currentUser || currentUser.role !== "admin") {
     return (
       <AdminAccessDenied
@@ -328,7 +112,6 @@ export default function AdminPage(props: Props) {
     );
   }
 
-  // Render Authenticated Admin Dashboard
   return (
     <ErrorBoundary
       contextName="AdminDashboard"
@@ -336,7 +119,6 @@ export default function AdminPage(props: Props) {
       appVersion={APP_VERSION}
     >
       <div style={{ minHeight: "100vh", background: "#0a0612", color: "#fff", paddingBottom: 60 }}>
-        {/* Header AppBar */}
         <AppBar
           eyebrow="CYBERDRAGON 2026 ADMIN"
           title="Ingestion Dashboard"
@@ -406,10 +188,8 @@ export default function AdminPage(props: Props) {
             </div>
           </div>
 
-          {/* Metric Cards Grid */}
           <AdminMetricsCards dbStats={dbStats} />
 
-          {/* Ingestion Controls Card */}
           <AdminIngestControls
             syncMode={syncMode}
             selectedDays={selectedDays}
@@ -425,10 +205,8 @@ export default function AdminPage(props: Props) {
             onCloseHardResyncModal={() => setShowHardResyncModal(false)}
           />
 
-          {/* Diff Inspector Component */}
           <AdminDiffSummary latestResult={latestResult} />
 
-          {/* Live Terminal / Execution Console */}
           <AdminTerminalConsole
             isSyncing={isSyncing}
             logFilter={logFilter}
@@ -436,7 +214,6 @@ export default function AdminPage(props: Props) {
             onLogFilterChange={setLogFilter}
           />
 
-          {/* Past Runs History Table */}
           <AdminPastRunsTable
             pastRuns={pastRuns}
             selectedRunForLogModal={selectedRunForLogModal}
@@ -444,7 +221,6 @@ export default function AdminPage(props: Props) {
             onSelectRunForLogModal={setSelectedRunForLogModal}
           />
 
-          {/* Attendee Feedback Table */}
           <AdminFeedbackList
             feedbackItems={feedbackItems}
             visibleFeedback={visibleFeedback}

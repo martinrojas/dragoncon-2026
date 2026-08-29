@@ -2,7 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { withRuntimeEnv } from "void/_env";
-import { loader, head } from "../pages/admin.server.ts";
+import { loader, head, tallyEventStats } from "../pages/admin.server.ts";
+import {
+  parseRunStats,
+  RUN_MODE_STYLES,
+  RUN_STATUS_STYLES,
+  FEEDBACK_KIND_STYLES,
+  FEEDBACK_STATUS_STYLES,
+} from "../components/admin/adminTypes.ts";
 
 function createFakeD1() {
   const sqliteDb = new DatabaseSync(":memory:");
@@ -122,4 +129,49 @@ test("admin user role evaluation enables admin link rendering and access", () =>
   assert.strictEqual(shouldShowAdminLink(regularUser), false);
   assert.strictEqual(shouldShowAdminLink(null), false);
   assert.strictEqual(shouldShowAdminLink(undefined), false);
+});
+
+
+test("tallyEventStats partitions active and soft-deleted events and aggregates by day", () => {
+  const rows = [
+    { isDeleted: 0, day: "Friday" },
+    { isDeleted: 0, day: "Friday" },
+    { isDeleted: 0, day: "Saturday" },
+    { isDeleted: 0, day: null },
+    { isDeleted: 1, day: "Friday" },
+    { isDeleted: 1, day: "Sunday" },
+  ];
+
+  const result = tallyEventStats(rows);
+  assert.strictEqual(result.totalActiveEvents, 4);
+  assert.strictEqual(result.totalDeletedEvents, 2);
+  assert.deepStrictEqual(result.eventsByDay, { Friday: 2, Saturday: 1 });
+});
+
+test("parseRunStats handles string JSON, object, and invalid inputs", () => {
+  const fromJson = parseRunStats('{"created":5,"updated":2,"deleted":1}');
+  assert.deepStrictEqual(fromJson, { created: 5, updated: 2, deleted: 1 });
+
+  const fromObj = parseRunStats({ created: 3, updated: 0, deleted: 0 });
+  assert.deepStrictEqual(fromObj, { created: 3, updated: 0, deleted: 0 });
+
+  assert.strictEqual(parseRunStats(null), null);
+  assert.strictEqual(parseRunStats("invalid-json{"), null);
+});
+
+test("admin style lookups define badges for all modes, statuses, and feedback kinds", () => {
+  assert.ok(RUN_MODE_STYLES["hard-resync"]);
+  assert.ok(RUN_MODE_STYLES["dry-run"]);
+  assert.ok(RUN_MODE_STYLES.sync);
+
+  assert.ok(RUN_STATUS_STYLES.completed);
+  assert.ok(RUN_STATUS_STYLES.failed);
+  assert.ok(RUN_STATUS_STYLES.running);
+
+  assert.strictEqual(FEEDBACK_KIND_STYLES.bug.label, "BUG");
+  assert.strictEqual(FEEDBACK_KIND_STYLES.idea.label, "IDEA");
+
+  assert.strictEqual(FEEDBACK_STATUS_STYLES.in_progress.label, "IN PROGRESS");
+  assert.strictEqual(FEEDBACK_STATUS_STYLES.done.label, "DONE");
+  assert.strictEqual(FEEDBACK_STATUS_STYLES.archived.label, "ARCHIVED");
 });

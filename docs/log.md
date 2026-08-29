@@ -3,6 +3,26 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-29 — Admin Page Refactoring Patterns & Hook Decomposition
+
+- **Type:** Refactor (applied Fowler refactoring catalog — extracted custom hooks, isolated modal components, simplified conditionals, and decomposed server aggregation).
+- **Refactorings Applied:**
+  - **Extract Custom Hooks:** Decomposed `pages/admin.tsx` state management into 4 single-responsibility hooks:
+    - `components/admin/useAdminAuth.ts`: Auth state, login form handling, and error reporting lifecycle.
+    - `components/admin/useAdminDashboardData.ts`: Admin runs, D1 statistics, and feedback data polling.
+    - `components/admin/useAdminIngest.ts`: Sync mode, day chips, throttling, execution triggers, terminal logging, and log filtering.
+    - `components/admin/useAdminFeedback.ts`: Feedback triage status transitions and active filter computation.
+  - **Extract Component (Single Responsibility):**
+    - `components/admin/AdminHardResyncModal.tsx`: Extracted from `AdminIngestControls.tsx`.
+    - `components/admin/AdminRunLogModal.tsx`: Extracted from `AdminPastRunsTable.tsx`.
+  - **Simplify Conditionals & Organize Data:**
+    - Replaced nested ternaries in `AdminPastRunsTable.tsx` and `AdminFeedbackList.tsx` with declarative lookup maps (`RUN_MODE_STYLES`, `RUN_STATUS_STYLES`, `FEEDBACK_KIND_STYLES`, `FEEDBACK_STATUS_STYLES`) and safe stats parser `parseRunStats()`.
+  - **Extract Method (Server Loader):**
+    - Extracted `tallyEventStats()` in `pages/admin.server.ts`.
+  - **PWA Cache Versioning:** Bumped `CACHE_NAME` in `public/sw.js` to `dragoncon-pwa-v21`.
+- **Verification:** 139/139 unit tests pass (`pnpm test`), SSR + client production builds clean (`pnpm build`).
+
+---
 ## 2026-08-29 — Admin Dashboard Modularization & Component Decomposition
 
 - **Type:** Refactor (code structure & maintainability — decomposed 1,325-line monolith into dedicated subcomponents).

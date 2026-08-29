@@ -19,6 +19,10 @@
     "middleware",
     "crons",
     "queues",
-    "db"
+    "db",
+    "components",
+    "lib",
+    "tests",
+    "scripts"
   ]
 }

@@ -98,3 +98,70 @@ export interface AdminDbStats {
   eventsByDay: Record<string, number>;
   totalUsers: number;
 }
+
+export interface BadgeStyle {
+  bg: string;
+  color: string;
+  border?: string;
+  label?: string;
+}
+
+export const RUN_MODE_STYLES: Record<string, BadgeStyle> = {
+  "hard-resync": { bg: "rgba(248,113,113,0.2)", color: "#f87171" },
+  "dry-run": { bg: "rgba(168,85,247,0.2)", color: "#c084fc" },
+  sync: { bg: "rgba(34,211,238,0.2)", color: "#22d3ee" },
+};
+
+export const RUN_STATUS_STYLES: Record<string, BadgeStyle> = {
+  completed: { bg: "rgba(74,222,128,0.2)", color: "#4ade80" },
+  failed: { bg: "rgba(248,113,113,0.2)", color: "#f87171" },
+  running: { bg: "rgba(250,204,21,0.2)", color: "#facc15" },
+};
+
+export const FEEDBACK_KIND_STYLES: Record<string, BadgeStyle> = {
+  bug: {
+    bg: "rgba(229, 72, 77, 0.15)",
+    color: "var(--coral-500)",
+    border: "1px solid rgba(229, 72, 77, 0.3)",
+    label: "BUG",
+  },
+  idea: {
+    bg: "rgba(255, 193, 7, 0.15)",
+    color: "var(--gold-400)",
+    border: "1px solid rgba(255, 193, 7, 0.3)",
+    label: "IDEA",
+  },
+};
+
+export const FEEDBACK_STATUS_STYLES: Record<string, BadgeStyle> = {
+  in_progress: {
+    bg: "rgba(168, 85, 247, 0.15)",
+    color: "var(--purple-300)",
+    border: "1px solid rgba(168, 85, 247, 0.3)",
+    label: "IN PROGRESS",
+  },
+  done: {
+    bg: "rgba(168, 85, 247, 0.15)",
+    color: "#4ade80",
+    border: "1px solid rgba(168, 85, 247, 0.3)",
+    label: "DONE",
+  },
+  archived: {
+    bg: "rgba(255, 255, 255, 0.08)",
+    color: "var(--text-tertiary)",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
+    label: "ARCHIVED",
+  },
+};
+
+export function parseRunStats(
+  stats: string | null | Record<string, number>,
+): { created?: number; updated?: number; deleted?: number } | null {
+  if (!stats) return null;
+  if (typeof stats === "object") return stats;
+  try {
+    return JSON.parse(stats) as { created?: number; updated?: number; deleted?: number };
+  } catch {
+    return null;
+  }
+}

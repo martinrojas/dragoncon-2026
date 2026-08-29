@@ -1,6 +1,8 @@
 import type { JSX } from "react";
 import {
   FEEDBACK_ACTIONS,
+  FEEDBACK_KIND_STYLES,
+  FEEDBACK_STATUS_STYLES,
   formatRunTimestamp,
   type FeedbackItem,
 } from "./adminTypes";
@@ -69,7 +71,9 @@ export function AdminFeedbackList({
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {visibleFeedback.map((item) => {
-            const isBug = item.kind === "bug";
+            const kindStyle = FEEDBACK_KIND_STYLES[item.kind] ?? FEEDBACK_KIND_STYLES.idea;
+            const statusStyle = FEEDBACK_STATUS_STYLES[item.status];
+
             return (
               <div
                 key={item.id}
@@ -86,14 +90,14 @@ export function AdminFeedbackList({
                     <span
                       className="cd-badge"
                       style={{
-                        background: isBug ? "rgba(229, 72, 77, 0.15)" : "rgba(255, 193, 7, 0.15)",
-                        color: isBug ? "var(--coral-500)" : "var(--gold-400)",
-                        border: `1px solid ${isBug ? "rgba(229, 72, 77, 0.3)" : "rgba(255, 193, 7, 0.3)"}`,
+                        background: kindStyle.bg,
+                        color: kindStyle.color,
+                        border: kindStyle.border,
                         fontSize: 10,
                         padding: "2px 6px",
                       }}
                     >
-                      {isBug ? "BUG" : "IDEA"}
+                      {kindStyle.label}
                     </span>
                     {item.contact === "Automated Error Report" && (
                       <span
@@ -109,26 +113,18 @@ export function AdminFeedbackList({
                         AUTO-REPORT
                       </span>
                     )}
-                    {item.status !== "new" && (
+                    {statusStyle && (
                       <span
                         className="cd-badge"
                         style={{
-                          background:
-                            item.status === "archived" ? "rgba(255, 255, 255, 0.08)" : "rgba(168, 85, 247, 0.15)",
-                          color:
-                            item.status === "archived"
-                              ? "var(--text-tertiary)"
-                              : item.status === "done"
-                                ? "#4ade80"
-                                : "var(--purple-300)",
-                          border: `1px solid ${
-                            item.status === "archived" ? "rgba(255, 255, 255, 0.15)" : "rgba(168, 85, 247, 0.3)"
-                          }`,
+                          background: statusStyle.bg,
+                          color: statusStyle.color,
+                          border: statusStyle.border,
                           fontSize: 10,
                           padding: "2px 6px",
                         }}
                       >
-                        {item.status === "in_progress" ? "IN PROGRESS" : item.status.toUpperCase()}
+                        {statusStyle.label}
                       </span>
                     )}
                     <span style={{ fontSize: 12, color: "var(--purple-300)", fontWeight: 500 }}>
