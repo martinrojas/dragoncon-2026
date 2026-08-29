@@ -3,6 +3,20 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-29 — Index Page Refactoring Architecture & Implementation Plan
+
+- **Type:** Architecture & Plan (spec and implementation plan for decomposing the 2,701-line index page into focused domain libraries, custom hooks, tabs, and modals).
+- **Artifacts Created:**
+  - `docs/superpowers/specs/2026-08-29-index-page-refactor-spec.md`: Comprehensive design specification detailing goals, code smell resolution, architecture breakdown, and invariants.
+  - `docs/superpowers/plans/2026-08-29-index-page-refactor.md`: 5-task bite-sized execution plan with TDD cycles, interface contracts, and verification commands.
+- **Planned Scope:**
+  - Pure domain utilities: `lib/scheduleUtils.ts` and `lib/squadUtils.ts` with unit tests in `tests/schedule-logic.test.ts` and `tests/squad-logic.test.ts`.
+  - Custom hooks: `useHomeAuth`, `useScheduleFilters`, `useAgenda`, `useSquad`, `useAppSyncAndPrefs`.
+  - Presentation tabs: `ScheduleTab`, `AgendaTab`, `SquadTab`, `ChangesTab`, `ProfileTab`.
+  - Presentation modals: `ScheduleFilterSheet`, `AuthModal`, `ToastNotification`.
+  - Coordinator refactor: `pages/index.tsx` (~120 lines).
+
+---
 ## 2026-08-29 — Admin Page Refactoring Patterns & Hook Decomposition
 
 - **Type:** Refactor (applied Fowler refactoring catalog — extracted custom hooks, isolated modal components, simplified conditionals, and decomposed server aggregation).

@@ -30,6 +30,8 @@ last_verified: 2026-08-26
 
 | Document | Type | Harvest Status |
 | :--- | :--- | :--- |
+| [`superpowers/specs/2026-08-29-index-page-refactor-spec.md`](/docs/superpowers/specs/2026-08-29-index-page-refactor-spec.md) | `Design Spec` | active |
+| [`superpowers/plans/2026-08-29-index-page-refactor.md`](/docs/superpowers/plans/2026-08-29-index-page-refactor.md) | `Implementation Plan` | active |
 | [`superpowers/specs/2026-08-28-squad-share-deep-linking-design.md`](/docs/superpowers/specs/2026-08-28-squad-share-deep-linking-design.md) | `Design Spec` | ✓ harvested (safe to delete) |
 | [`superpowers/plans/2026-08-28-squad-share-deep-linking.md`](/docs/superpowers/plans/2026-08-28-squad-share-deep-linking.md) | `Implementation Plan` | ✓ harvested (safe to delete) |
 ---
@@ -58,3 +60,5 @@ last_verified: 2026-08-26
 | [`tests/share.test.ts`](/tests/share.test.ts) | Unit Test Suite (Web Share & Clipboard Fallback) | CyberDragon Engineering |
 | [`tests/user-privacy.test.ts`](/tests/user-privacy.test.ts) | Unit Test Suite (Squad Schedule Privacy PATCH API) | CyberDragon Engineering |
 | [`tests/friends-privacy.test.ts`](/tests/friends-privacy.test.ts) | Unit Test Suite (Friends Full Agenda & Schedule Privacy Authorization) | CyberDragon Engineering |
+| [`tests/schedule-logic.test.ts`](/tests/schedule-logic.test.ts) | Unit Test Suite (Schedule Domain Logic & Conflicts) | CyberDragon Engineering |
+| [`tests/squad-logic.test.ts`](/tests/squad-logic.test.ts) | Unit Test Suite (Squad Domain Logic & Overlap) | CyberDragon Engineering |
