@@ -63,10 +63,13 @@ type BrowserContentResponse =
   | { success: true; result: string; meta: { status: number; title: string } }
   | { success: false; errors: Array<{ message: string }> };
 
-// Browser Run costs real money and real wall time (~1-3 s per page), so a run
-// that is being blocked wholesale must not escalate every miss. 150 covers the
-// worst observed loss on a mid-size day; the cron's next tick picks up the rest.
-export const BROWSER_FALLBACK_BUDGET = 150;
+// Browser Run costs real money and real wall time (~1.0 s per page measured on
+// the 2026-08-29 Sep++5 run). Upstream 403s are volume-triggered, not the ~3%
+// random rate the retry below assumes: that run saw 391 of 769 events blocked
+// after the retry, and a 150 budget recovered only the earliest 150 of them,
+// dropping the listing's tail (241 events) on every tick. 450 clears the
+// largest day outright.
+export const BROWSER_FALLBACK_BUDGET = 450;
 
 // Total event-detail fetches allowed across a whole `runIngestion` call when
 // the caller doesn't pass `maxDetailFetches`. Cron rotation gives each tick one
@@ -74,9 +77,10 @@ export const BROWSER_FALLBACK_BUDGET = 150;
 // to clear the largest day (Friday ~691, Sunday 637, Saturday 660).
 //
 // The fetch budget is NOT the tightest constraint. Per invocation:
-//   - subrequests: 2000 (pinned in wrangler.jsonc; Paid default is 10,000).
-//     Counts every fetch() AND D1 call. A 691-event day ≈ 691 fetches + ~235
-//     D1 statements ≈ 930.
+//   - subrequests: 5000 (pinned in wrangler.jsonc; Paid default is 10,000).
+//     Counts every fetch() AND D1 call, and a 403 costs three fetches (initial,
+//     delayed retry, browser fallback). A fully blocked 769-event day ≈ 769 +
+//     391 retries + 391 browser + ~235 D1 statements ≈ 1786.
 //   - D1 queries: 1000, a separate D1-side cap. Multi-row inserts are sized by
 //     ROW_CHUNK to stay far below it; per-row writes would need ~1382.
 //   - CPU: `limits.cpu_ms` (10,000). Measured in production at ~18 ms/event for

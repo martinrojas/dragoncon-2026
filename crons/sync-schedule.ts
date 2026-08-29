@@ -4,7 +4,7 @@ import { runIngestionWithRunLog } from "../lib/ingest.ts";
 export const cron = [
   "0 */4 * 8 *", // Aug 24-31: every 4 hours
   "0 */2 1-2 9 *", // Sep 1-2: every 2 hours
-  "*/10 * 3-7 9 *", // Sep 3-7 (Dragon Con): every 10 minutes
+  "*/20 * 3-7 9 *", // Sep 3-7 (Dragon Con): every 20 minutes
 ];
 
 // One con day per tick: each invocation gets the Worker's whole subrequest
@@ -19,9 +19,9 @@ export const SYNC_DAYS = ["Sep++2", "Sep++3", "Sep++4", "Sep++5", "Sep++6", "Sep
 export const CADENCE_MS: Record<string, number> = {
   "0 */4 * 8 *": 4 * 60 * 60 * 1000,
   "0 */2 1-2 9 *": 2 * 60 * 60 * 1000,
-  "*/10 * 3-7 9 *": 10 * 60 * 1000,
+  "*/20 * 3-7 9 *": 20 * 60 * 1000,
 };
-const DEFAULT_CADENCE_MS = 10 * 60 * 1000;
+const DEFAULT_CADENCE_MS = 20 * 60 * 1000;
 
 /** Deterministic round-robin over SYNC_DAYS. The slot index is the clock
  * divided by the active tick interval, so consecutive invocations pick
