@@ -3,6 +3,23 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-29 — Admin Dashboard Modularization & Component Decomposition
+
+- **Type:** Refactor (code structure & maintainability — decomposed 1,325-line monolith into dedicated subcomponents).
+- **Scope & Architecture:**
+  - `pages/admin.tsx`: Refactored into a concise coordinator (~360 lines) orchestrating data loading, sync execution, and state transitions while maintaining 100% backwards compatibility for exported types (`User`, `IngestionRun`, `FeedbackItem`, etc.) and `formatRunTimestamp`.
+  - `components/admin/adminTypes.ts`: Centralized shared types, constants (`FEEDBACK_ACTIONS`, `DAY_OPTIONS`), and `formatRunTimestamp`.
+  - `components/admin/AdminAccessDenied.tsx`: Extracted restricted view and admin login form.
+  - `components/admin/AdminMetricsCards.tsx`: Extracted D1 database overview statistics cards.
+  - `components/admin/AdminIngestControls.tsx`: Extracted sync mode selector, day filter chips, throttle limiter, execute trigger, and hard resync confirmation modal.
+  - `components/admin/AdminDiffSummary.tsx`: Extracted diff summary badges and expandable event change lists.
+  - `components/admin/AdminTerminalConsole.tsx`: Extracted live execution terminal with color-coded log lines and filtering.
+  - `components/admin/AdminPastRunsTable.tsx`: Extracted ingestion run history table and run log modal.
+  - `components/admin/AdminFeedbackList.tsx`: Extracted attendee feedback triage list and lifecycle actions.
+  - `public/sw.js`: Bumped `CACHE_NAME` to `dragoncon-pwa-v20` per PWA cache versioning policy.
+- **Verification:** 136/136 unit tests pass (`pnpm test`), SSR + client production builds clean (`pnpm build`).
+
+---
 ## 2026-08-28 — Track Exclusion Filters & Persisted Filter State
 
 - **Type:** Feature (schedule filtering — "show everything except these tracks", filter preferences survive reloads).
