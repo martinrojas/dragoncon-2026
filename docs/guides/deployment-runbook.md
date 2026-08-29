@@ -150,13 +150,13 @@ The Free plan's 50-subrequest-per-invocation ceiling is far below what any con-d
 ```jsonc
 "limits": {
   "cpu_ms": 10000,     // self-imposed; cron handlers are documented up to 15 min
-  "subrequests": 2000  // self-imposed; Paid default is 10,000 (configurable to 10M)
+  "subrequests": 5000  // self-imposed; Paid default is 10,000 (configurable to 10M)
 }
 ```
 
 Do not reason about sync sizing from this block alone: subrequests are only one of four per-invocation ceilings (CPU, D1 queries, subrequests, detail-fetch budget). Which one binds and why — including the production measurement behind it — lives in [`rules/ingestion-budget.md`](/docs/rules/ingestion-budget.md); platform constants and feature verdicts live in [`rules/cloudflare-platform-limits.md`](/docs/rules/cloudflare-platform-limits.md).
 
-One operational trap these limits cannot catch: **Cloudflare does not prevent overlapping cron runs** when execution outlasts its interval. Waves keep a full day near ~1.6 minutes against a 10-minute cadence, so overlap is unlikely but unguarded.
+One operational trap these limits cannot catch: **Cloudflare does not prevent overlapping cron runs** when execution outlasts its interval. Waves keep a full day near ~1.6 minutes against the 20-minute con-week cadence, so overlap is unlikely but unguarded. Browser Run retries add real wall time on a heavily-403'd day (~1.0 s per recovered page, serialized inside the waves), which is the main way a run could grow toward its interval.
 
 1. **Upgrade the account:** Cloudflare dashboard (dash.cloudflare.com) → **Workers & Pages** → **Plans** (self-serve "Activate"/"Upgrade" prompt on the Free plan) → subscribe to **Workers Paid** with a payment method on file. This is an account-level, self-serve change; it cannot be done via Wrangler or the API.
 2. **Set a budget alert (informational only):** **Billing** → **Billable Usage** → **Create budget alert**. Cloudflare has no hard spend cap on Workers usage — a budget alert only emails a warning past a chosen threshold, it does not pause or block the Worker.

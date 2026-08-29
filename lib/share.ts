@@ -27,3 +27,18 @@ export async function shareLink(payload: SharePayload): Promise<{ shared: boolea
 
   return { shared: false, copied: false };
 }
+
+/** Copies arbitrary text to the clipboard. Unlike `shareLink` this never opens
+ * a native share sheet — pasting a debug log into a share target is not the
+ * intent. Returns false when the API is missing or the write is rejected
+ * (clipboard writes require a secure context and a user gesture). */
+export async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.clipboard) return false;
+  if (typeof navigator.clipboard.writeText !== "function") return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -90,7 +90,7 @@ test("cron configuration exports expected schedules", () => {
   assert.deepStrictEqual(cron, [
     "0 */4 * 8 *",
     "0 */2 1-2 9 *",
-    "*/10 * 3-7 9 *",
+    "*/20 * 3-7 9 *",
   ]);
 });
 
@@ -295,11 +295,11 @@ test("nextSyncDays rotates through every con day deterministically", () => {
 });
 
 test("nextSyncDays advances exactly one day per tick at the con-week cadence", () => {
-  const TEN_MIN = 10 * 60 * 1000;
+  const TWENTY_MIN = 20 * 60 * 1000;
   const start = Date.UTC(2026, 7, 28); // August: every con day is still ahead
   const picks = Array.from(
     { length: SYNC_DAYS.length },
-    (_, i) => nextSyncDays(new Date(start + i * TEN_MIN), TEN_MIN)[0],
+    (_, i) => nextSyncDays(new Date(start + i * TWENTY_MIN), TWENTY_MIN)[0],
   );
 
   assert.strictEqual(

@@ -56,7 +56,7 @@ External platform limits and product behavior in this concept come from vendor r
 
 Every `fetch()` **and** every call to a Cloudflare service (D1/KV/R2) counts toward the subrequest total, so a scraper that switches storage products does not escape the accounting [^cf-workers-limits].
 
-Our own pins live in `wrangler.jsonc` (`subrequests: 2000`, `cpu_ms: 10000`) and are **self-imposed spend ceilings below the plan defaults**; the config keys themselves are documented (`limits.subrequests`, `limits.cpu_ms`) [^cf-wrangler-config]. Sizing decisions that must respect all four ingestion ceilings live in [`rules/ingestion-budget.md`](/docs/rules/ingestion-budget.md).
+Our own pins live in `wrangler.jsonc` (`subrequests: 5000`, `cpu_ms: 10000`) and are **self-imposed spend ceilings below the plan defaults**; the config keys themselves are documented (`limits.subrequests`, `limits.cpu_ms`) [^cf-wrangler-config]. Sizing decisions that must respect all four ingestion ceilings live in [`rules/ingestion-budget.md`](/docs/rules/ingestion-budget.md).
 
 ## Measurement practice
 

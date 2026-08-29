@@ -3,6 +3,18 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-29 — Browser Fallback Starvation & Con-Week Cadence
+
+- **Type:** Ingestion budget correction driven by a production run log.
+- **Diagnosis:** The `Sep++5` sync listed 769 events and was blocked on **391 of them (50.8%)** after the delayed retry — not the ~3% random rate the inline retry comment assumes; the 403s are volume-triggered. `BROWSER_FALLBACK_BUDGET = 150` recovered the earliest 150 at a **100% success rate** and dropped **241 events (31% of Saturday)**. Because the budget is spent front-to-back in listing order, the loss is the listing's **tail, deterministically** — the same events stale on every tick, not a rotating sample. Blocked events return `null` from `fetchAndParse`, so they get neither CREATE nor UPDATE.
+- **Not broken:** Deletion sweeps stayed correct. Deletes derive from the listing (walked to exhaustion), not from detail-fetch success, so the day correctly reported `complete` and recorded 4 deletes despite 241 missing details.
+- **Changes:** `BROWSER_FALLBACK_BUDGET` 150 → **450** (clears the largest day outright); `wrangler.jsonc` `subrequests` 2000 → **5000**; con-week cron `*/10` → **`*/20`** with the matching `CADENCE_MS` entry and `DEFAULT_CADENCE_MS`.
+- **Why the subrequest raise was required:** a blocked event costs **three** fetches (initial, delayed retry, browser fallback) while the detail-fetch counter decrements once per event. Full coverage of a 769-event Saturday ≈ 769 + 391 + 391 + ~235 D1 ≈ **1,786**, and the run log's `budget left` understates this.
+- **Cost basis:** Browser Run measured at **1.04 s/page** (155,492 ms ÷ 150). Against the 10 h/month included tier (then $0.09/h), September's 744 ticks at the old 10-minute cadence projected ~32 h (~$2) while still losing 31% of details; full coverage at `*/20` lands near the same spend with no loss. Account state at decision time: 0.63 h used, 981 quick actions.
+- **Verification:** `pnpm test` 152/152 passed; `pnpm build` completed (633 SSR / 84 client modules). `public/sw.js` `CACHE_NAME` bumped v25 → v26.
+- **Known drift (not fixed):** `docs/rules/ingestion-budget.md` describes the rotation slot as `% 7`; the code uses `% SYNC_DAYS.length`, which is 6.
+
+---
 ## 2026-08-29 — Post-Refactor Bundle Revalidation
 
 - **Type:** Documentation maintain pass after the admin and home-page decompositions.

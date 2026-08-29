@@ -27,11 +27,14 @@ sources:
     resource: crons/sync-schedule.ts:13-60
     title: CADENCE_MS tick-interval map and per-tick nextSyncDays round-robin with past-day skipping
   - id: wrangler-limits
-    resource: wrangler.jsonc:9-14
-    title: Workers subrequests ceiling (2000) that caps per-invocation detail budgets
+    resource: wrangler.jsonc:9-17
+    title: Workers subrequests ceiling (5000) that caps per-invocation detail budgets
   - id: run-log-entrypoint
     resource: lib/ingest.ts:868-872
     title: Logged ingestion entry point required by routes and cron
+  - id: browser-fallback-run
+    resource: session:2026-08-29
+    title: "Workers Logs, admin sync of Sep++5: 769 listed, 391 blocked after retry, 150 recovered, 241 dropped, 155,492 ms browser time"
   - id: session-log
     resource: docs/log.md
     title: 2026-08-26 starvation postmortem (root cause, rejected approaches)
@@ -49,11 +52,14 @@ External platform ceilings and production measurements in this concept are infer
   |---|---|---|
   | **CPU** (`limits.cpu_ms`) | 10,000 ms (pinned; cron handlers are allowed 15 min) | ~2.9 s sliced — but **~12.6 s unsliced**, which kills the invocation |
   | **D1 queries** | 1,000 (D1-side cap; D1 operations also consume Worker subrequests) | ~235 batched — but **~1,382 per-row** |
-  | **Subrequests** | 2,000 (pinned; Paid default is 10,000) | ~930 (fetches + D1) |
+  | **Subrequests** | 5,000 (pinned; Paid default is 10,000) | ~930 (fetches + D1) — but **~1,786** on a wholesale-403 day, where each blocked event costs three fetches |
   | **Detail fetches** | `DEFAULT_DETAIL_FETCH_BUDGET = 1800` | 691 |
 
 - `DEFAULT_DETAIL_FETCH_BUDGET = 1800` is shared across the **whole invocation**, not per day [^ingest-module]. Cron passes no override; admin's throttle dropdown supplies its own, and its "full" option resolves to *this default* (it previously resolved to 400, the smallest value in the list). A test asserts the constant stays inside `[700, 1900]` [^ingest-tests].
-- `BROWSER_FALLBACK_BUDGET = 150` separately caps browser-rendered retries after direct upstream requests return `403`; it does not raise the total detail-fetch budget [^ingest-module].
+- `BROWSER_FALLBACK_BUDGET = 450` separately caps browser-rendered retries after direct upstream requests return `403`; it does not raise the total detail-fetch budget [^ingest-module].
+- **Upstream 403s are volume-triggered, not the ~3% random rate the inline retry comment assumes.** The 2026-08-29 `Sep++5` run blocked **391 of 769** events after the delayed retry. Because the budget is spent front-to-back in listing order, a cap below the day's blocked count starves the listing's *tail* deterministically — the same events go stale on every tick, not a rotating sample. At the old 150, that run recovered 150 and dropped 241 (31% of Saturday), and each dropped event is skipped outright (`fetchAndParse` returns `null`): no CREATE, no UPDATE, stale `track`/`speakers`/`location`/`description` [^browser-fallback-run].
+- A blocked event costs **three** fetches (initial, delayed retry, browser fallback), while the detail-fetch counter decrements **once per event**. `budget left` in the run log therefore understates real subrequest consumption on a heavily-403'd day; size against the subrequest ceiling, not that number [^ingest-module].
+- Deletion sweeps stay safe under browser starvation: deletes are derived from the **listing**, which is walked to exhaustion, not from detail-fetch success. A day with hundreds of blocked details still reports `complete` and sweeps correctly [^browser-fallback-run].
 - Raising the fetch budget alone cannot complete a weekend day under the recorded unsliced CPU measurement (inferred, not verified). The measurement places a full-document parse near 18 ms CPU per event [^prod-measurement], while `sliceDetailRegion` reduces the parsed HTML region before Cheerio loads it [^ingest-module].
 - A truncated or killed day skips its deletion sweep, so cancellations stop being detected. The historical statement that production had not run the sweep on Friday, Saturday, or Sunday is inferred, not verified [^session-log].
 - Day listings are walked to exhaustion, never blind-sliced. A day that runs out of budget mid-listing sets `truncated`, and **`truncated` suppresses the deletion sweep** for that day: an incomplete scrape cannot distinguish "removed upstream" from "not attempted" [^session-log].
@@ -84,7 +90,7 @@ External platform ceilings and production measurements in this concept are infer
 
 - One con day per tick via deterministic `nextSyncDays()` round-robin; each tick gets the Worker's whole budget instead of sharing it seven ways [^cron-rotation].
 - The rotation slot is `floor(now / cadenceMs) % 7`, where `cadenceMs` comes from `CADENCE_MS[controller.cron]` — the tick interval of the pattern that fired. Keying the slot to the **cadence** (not a fixed constant) is what makes each invocation advance exactly one day: a fixed 4h slot left the 10-minute con-week cadence re-syncing one day for 24 consecutive ticks. Adding a cron pattern requires a `CADENCE_MS` entry; a test asserts the two stay in sync [^cron-rotation].
-- Slots pointing at passed days collapse forward to the first live day, so the current day absorbs the freed ticks — coverage tightens as the con progresses (Sep 5: every live day within 70 min, today ~4× per cycle; Sep 7: today ~6 of 7 ticks). Returns empty (handler no-ops) once the con is over [^cron-rotation].
+- Slots pointing at passed days collapse forward to the first live day, so the current day absorbs the freed ticks — coverage tightens as the con progresses (Sep 5: every live day within 140 min at the 20-minute cadence, today ~4× per cycle; Sep 7: today ~6 of 7 ticks). Returns empty (handler no-ops) once the con is over [^cron-rotation].
 - Rejected alternative: literal parallel invocations / self-fanout (one HTTP call per day). Each call would get a fresh subrequest budget, but the design adds internal auth wiring between cron and the signed route, and N-way upstream concurrency risks tripping rate limits — recorded here so it is not re-litigated [^session-log].
 
 ## Write isolation
@@ -100,5 +106,6 @@ External platform ceilings and production measurements in this concept are infer
 [^prod-measurement]: Workers Logs, admin sync of `Sep++6` (2026-08-27): `cpuTimeMs: 7300`, `wallTimeMs: 258164`, 400 detail fetches of 637 listed events, `TRUNCATED`
 [^cron-rotation]: `crons/sync-schedule.ts:13-60`
 [^wrangler-limits]: `wrangler.jsonc:8-15`
+[^browser-fallback-run]: Workers Logs, admin sync of `Sep++5` (2026-08-29): 769 listed, `recovered 150, still blocked 241, 155492.65 ms browser time`, day reported `complete`
 [^session-log]: `docs/log.md`, entries 2026-08-26 and 2026-08-27
 [^run-log-entrypoint]: `lib/ingest.ts:868-872`

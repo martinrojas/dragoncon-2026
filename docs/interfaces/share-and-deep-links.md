@@ -9,11 +9,14 @@ status: stable
 maintainer: CyberDragon Engineering
 sources:
   - id: share-utility
-    resource: lib/share.ts:1-29
+    resource: lib/share.ts:1-44
     title: Native share and clipboard fallback result contract
   - id: share-tests
-    resource: tests/share.test.ts:1-53
+    resource: tests/share.test.ts:1-90
     title: Native share, clipboard fallback, and user-abort regression tests
+  - id: run-log-copy
+    resource: components/admin/AdminRunLogModal.tsx:1-112
+    title: Admin run-log modal copy-to-clipboard button
   - id: panel-share
     resource: components/PanelDetailModal.tsx:308-324
     title: Event share URL generation and copied-link notification
@@ -50,6 +53,12 @@ sources:
 
 The unit tests cover native sharing, clipboard fallback, and user cancellation.[^share-tests]
 
+## Plain-text copy contract
+
+`copyText(text)` returns a `boolean` and writes straight to `navigator.clipboard.writeText`.[^share-utility] It deliberately **does not** consult `navigator.share`: a share sheet is the wrong destination for a debug payload, and on mobile it would hijack the copy. It returns `false` — never throws — when the clipboard API is absent or the write is rejected (writes require a secure context and a user gesture), so callers must render the failure rather than assume success.
+
+The admin run-log modal is the first consumer: its "⧉ Copy log" button copies the run's raw log verbatim, is disabled when the run recorded no log, and flips to `✓ Copied` or `✕ Copy failed` for two seconds based on the returned boolean.[^run-log-copy]
+
 ## Event links
 
 An event share URL uses `/?event=<event-id>`. `PanelDetailModal` builds the URL from `window.location.origin`, passes the event title and schedule text to `shareLink`, and reports clipboard success inside the modal.[^panel-share]
@@ -71,7 +80,8 @@ The share utility guards browser API access with `typeof navigator !== "undefine
 ## Provenance
 
 [^share-utility]: Native share and clipboard fallback result contract — `lib/share.ts:1-29`
-[^share-tests]: Native share, clipboard fallback, and user-abort regression tests — `tests/share.test.ts:1-53`
+[^share-tests]: Native share, clipboard fallback, user-abort, and `copyText` regression tests — `tests/share.test.ts:1-90`
+[^run-log-copy]: Admin run-log copy button and its disabled/confirmation states — `components/admin/AdminRunLogModal.tsx:10-21`
 [^panel-share]: Event share URL generation and copied-link notification — `components/PanelDetailModal.tsx:308-324`
 [^event-resolver]: Event query parameter resolution after client mount — `components/home/hooks/useAppSyncAndPrefs.ts:48-125`
 [^event-cleanup]: Event query parameter removal when the detail modal closes — `pages/index.tsx:354-363`
