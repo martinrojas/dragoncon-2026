@@ -3,13 +3,13 @@ type: Domain Rules
 title: Venue Transit & Capacity Calculation Rules
 description: Calculation matrix for pedestrian and skybridge walk times between Atlanta host hotels and room line capacity heuristics.
 tags: [domain-rules, walktime, navigation, venues]
-generated: { by: docsmith/1.3.0, at: 2026-08-22T06:15:00Z }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-22T06:15:00Z }]
+generated: { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-22T06:15:00Z }, { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
   - id: walktime-module
-    resource: lib/walktime.ts:1-111
+    resource: lib/walktime.ts:1-150
     title: Core venue list, walk matrix table, and heuristic functions
   - id: walktime-tests
     resource: tests/walktime.test.ts:1-75
@@ -88,3 +88,8 @@ const pct = 45 + (Math.abs(hash) % 50); // Bounded strictly between 45% and 94%
 - **$\text{pct} > 85\%$:** Status `"Line forming at door"`, accent color `var(--coral-500)`.
 - **$\text{pct} > 70\%$:** Status `"Filling up"`, accent color `var(--gold-500)`.
 - **$\text{pct} \le 70\%$:** Status `"Seating available"`, accent color `var(--jade-500)`.
+
+## Provenance
+
+[^walktime-module]: Core venue list, walk matrix table, and heuristic functions — `lib/walktime.ts:1-150`
+[^walktime-tests]: Unit tests validating normalization, walk times, and capacity heuristics — `tests/walktime.test.ts:1-75`

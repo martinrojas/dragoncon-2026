@@ -2,7 +2,7 @@
 okf_version: "0.2"
 title: Documentation Map — CyberDragon Companion App
 description: Canonical knowledge index and source registration for Dragon Con 2026 Companion App.
-last_verified: 2026-08-26
+last_verified: 2026-08-29
 ---
 
 # Knowledge Index
@@ -23,6 +23,8 @@ last_verified: 2026-08-26
 | [`rules/ingestion-budget.md`](/docs/rules/ingestion-budget.md) | `Domain Rules` | Invariants for the shared ingestion detail budget, smallest-first day ordering, ET past-day skipping, and batched D1 writes. |
 | [`interfaces/upstream-schedule-api.md`](/docs/interfaces/upstream-schedule-api.md) | `API Contracts` | Param contract and observed behavior of the upstream `app.core-apps.com/dragoncon26` schedule source. |
 | [`rules/cloudflare-platform-limits.md`](/docs/rules/cloudflare-platform-limits.md) | `Domain Rules` | Documented Workers/D1/Cron limits, which platform features do and do not fit the ingestion workload, and the production CPU measurement practice. |
+| [`rules/frontend-composition.md`](/docs/rules/frontend-composition.md) | `Domain Rules` | Coordinator boundaries, SSR-safe browser state restoration, and shared frontend formatting invariants. |
+| [`interfaces/share-and-deep-links.md`](/docs/interfaces/share-and-deep-links.md) | `API Contracts` | Browser sharing behavior and the event and squad invitation URL contracts. |
 
 ---
 
@@ -30,8 +32,8 @@ last_verified: 2026-08-26
 
 | Document | Type | Harvest Status |
 | :--- | :--- | :--- |
-| [`superpowers/specs/2026-08-29-index-page-refactor-spec.md`](/docs/superpowers/specs/2026-08-29-index-page-refactor-spec.md) | `Design Spec` | active |
-| [`superpowers/plans/2026-08-29-index-page-refactor.md`](/docs/superpowers/plans/2026-08-29-index-page-refactor.md) | `Implementation Plan` | active |
+| [`superpowers/specs/2026-08-29-index-page-refactor-spec.md`](/docs/superpowers/specs/2026-08-29-index-page-refactor-spec.md) | `Design Spec` | ✓ harvested (safe to delete) |
+| [`superpowers/plans/2026-08-29-index-page-refactor.md`](/docs/superpowers/plans/2026-08-29-index-page-refactor.md) | `Implementation Plan` | ✓ harvested (safe to delete) |
 | [`superpowers/specs/2026-08-28-squad-share-deep-linking-design.md`](/docs/superpowers/specs/2026-08-28-squad-share-deep-linking-design.md) | `Design Spec` | ✓ harvested (safe to delete) |
 | [`superpowers/plans/2026-08-28-squad-share-deep-linking.md`](/docs/superpowers/plans/2026-08-28-squad-share-deep-linking.md) | `Implementation Plan` | ✓ harvested (safe to delete) |
 ---
@@ -62,3 +64,4 @@ last_verified: 2026-08-26
 | [`tests/friends-privacy.test.ts`](/tests/friends-privacy.test.ts) | Unit Test Suite (Friends Full Agenda & Schedule Privacy Authorization) | CyberDragon Engineering |
 | [`tests/schedule-logic.test.ts`](/tests/schedule-logic.test.ts) | Unit Test Suite (Schedule Domain Logic & Conflicts) | CyberDragon Engineering |
 | [`tests/squad-logic.test.ts`](/tests/squad-logic.test.ts) | Unit Test Suite (Squad Domain Logic & Overlap) | CyberDragon Engineering |
+| [`tests/events-filter.test.ts`](/tests/events-filter.test.ts) | Unit Test Suite (Event API Filters & Facets) | CyberDragon Engineering |

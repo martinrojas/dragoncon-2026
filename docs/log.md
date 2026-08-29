@@ -3,6 +3,19 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-29 — Post-Refactor Bundle Revalidation
+
+- **Type:** Documentation maintain pass after the admin and home-page decompositions.
+- **Architecture:** Rewrote `docs/SYSTEM_DESIGN.md` module design around the 412-line home coordinator, 237-line admin coordinator, their hooks and presentation components, and the extracted schedule, squad, and share utilities.
+- **New concepts:** Added `docs/rules/frontend-composition.md` for coordinator, mirror-state, SSR restore-gate, and timestamp rules; added `docs/interfaces/share-and-deep-links.md` for native sharing, clipboard fallback, and `?event=`/`?invite=` contracts.
+- **Corrected drift:** Updated the ingestion default from 400 to 1800 in `docs/interfaces/api-contracts.md`; corrected the September cron cadences to 2 hours and 10 minutes; documented `GET /api/admin/runs/:id`; refreshed source ranges; repointed `AGENTS.md` at extracted modules; registered `tests/events-filter.test.ts`.
+- **Source lifecycle:** Independent item-by-item gap analyses certified the 2026-08-28 squad source pair and 2026-08-29 index-refactor source pair as `✓ harvested (safe to delete)`. This pass retained all four source files.
+- **Verification:** `pnpm test` executed 150 tests: 150 passed, 0 failed. `npx tsc --noEmit` returned zero diagnostics. `pnpm build` completed after transforming 633 SSR modules and 84 client modules.
+- **Unverified evidence:** The 2026-08-27 production CPU/wall-time measurement and external Cloudflare platform limits remain labeled inferred, not verified locally.
+
+Docs-freshness: head=d81e75bd09d4d8c2907ca865a67daadda4dee054 date=2026-08-29 pass=maintain
+
+---
 ## 2026-08-29 — Index Page Coordinator Refactor Complete (Task 5/5)
 
 - **Type:** Refactor (final task of the index-page decomposition plan — collapsed the 2,701-line `pages/index.tsx` monolith into a 412-line coordinator).

@@ -2,7 +2,7 @@
 
 > Mobile companion PWA for Dragon Con 2026 in Atlanta, GA. Built with React 19 SSR, Hono, Void, and Cloudflare Workers with D1 SQLite.
 
-Last updated: 2026-08-27
+Last updated: 2026-08-29
 
 ## Project Overview
 
@@ -27,8 +27,8 @@ pnpm build
 pnpm run deploy
 ```
 
-- **Safe read-only test path:** `pnpm test` runs isolated walk-time and capacity heuristic unit tests without touching the database.
-- **Database operations:** `pnpm run db:generate` generates migration SQL; `pnpm run db:migrate` applies migrations locally.
+- **Safe read-only test path:** `pnpm test` runs 19 isolated Node test files covering domain logic, routes, ingestion, authentication, administration, and UI contracts without touching the database.
+- **Database operations:** `pnpm run db:generate` writes migration files; `pnpm run db:migrate` mutates the local D1 database.
 
 ## Architecture (Summary)
 
@@ -41,9 +41,9 @@ For full architecture details: `docs/SYSTEM_DESIGN.md`.
 - **Route Handlers:** Every endpoint in `routes/api/**/*.ts` must wrap its handler in `defineHandler` from `void` and export uppercase HTTP constants (`export const GET = defineHandler(...)`, `export const POST = defineHandler(...)`).
 - **Database:** Define tables in `db/schema.ts` using `void/schema-d1` and `void/db`. Never write raw migration SQL by hand; use `pnpm run db:generate`.
 - **Styling:** Use CyberDragon Glass design tokens in `public/cyberdragon.css` (Space Grotesk `var(--font-core)`, JetBrains Mono `var(--font-mono)`, `--canvas`, `--surface-glass-strong`, `--purple-600`, `--gold-500`, `--coral-500`).
-- **Client prefs:** Restore `localStorage` settings in the mount effect, not a `useState` initializer (SSR renders server-side); arm the persist effect only after restore (`dc_selected_day` pattern in `pages/index.tsx`).
-- **D1 statements:** A statement may bind at most 100 parameters (per statement, even inside `batch()`). Multi-row INSERTs bind per column per row — check `columns × rows` before raising any chunk size (`ROW_CHUNK`/`ID_CHUNK` in `lib/ingest.ts`).
-- **Timestamps:** Render admin times via `formatRunTimestamp` (`pages/admin.tsx`) — SQLite `datetime('now')` is suffix-less UTC and bare `new Date(...).toLocaleString()` misparses it as viewer-local.
+- **Client prefs:** Restore browser storage after mount and gate persistence until restoration completes. Full rules: `docs/rules/frontend-composition.md`.
+- **D1 statements:** Keep ingestion statement sizing within the verified D1 parameter budget. Full rules: `docs/rules/ingestion-budget.md`.
+- **Timestamps:** Render admin times with `formatRunTimestamp` from `components/admin/adminTypes.ts`. Full rules: `docs/rules/frontend-composition.md`.
 - **Commits:** Follow conventional commit messages (`feat:`, `fix:`, `chore:`, `docs:`, `test:`).
 
 ## Communication style
@@ -61,6 +61,7 @@ Start here: `docs/SYSTEM_DESIGN.md`. Full map: `docs/index.md`.
 | API endpoints, admin ingestion & WebAuthn passkeys | `docs/interfaces/api-contracts.md` |
 | Cloudflare Workers & D1 deployment | `docs/guides/deployment-runbook.md` |
 | Architecture decisions & rationale | `docs/decisions/0001-cloudflare-d1-self-host.md` |
+| React coordinators, hooks & browser state | `docs/rules/frontend-composition.md` |
 
 ## Project Policies
 
