@@ -4,6 +4,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type { Context } from "hono";
 import { defineHandler } from "void";
 import { db, eq } from "void/db";
@@ -118,7 +119,7 @@ export const POST = defineHandler(async (c: Context) => {
         const now = new Date().toISOString();
         const id = `auth_${crypto.randomUUID().slice(0, 8)}`;
 
-        const pubKeyBase64 = Buffer.from(credential.publicKey).toString("base64url");
+        const pubKeyBase64 = isoBase64URL.fromBuffer(credential.publicKey);
 
         await db.insert(authenticators).values({
           id,
@@ -188,7 +189,7 @@ export const POST = defineHandler(async (c: Context) => {
       }
 
       const origin = new URL(c.req.url, "http://localhost").origin;
-      const publicKeyBuffer = Buffer.from(authRecord.publicKey, "base64url");
+      const publicKeyBuffer = isoBase64URL.toBuffer(authRecord.publicKey);
 
       const verification = await verifyAuthenticationResponse({
         response: assertionResponse,

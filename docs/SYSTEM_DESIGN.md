@@ -3,22 +3,22 @@ type: System Design
 title: System Design — CyberDragon Companion App
 description: Architecture, subsystems, data model, APIs, and Cloudflare deployment for the Dragon Con 2026 Companion PWA.
 tags: [architecture, evergreen, pwa, cloudflare, react19]
-generated: { by: docsmith/1.3.0, at: 2026-08-26T00:00:00Z }
+generated: { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }
 verified: [{ by: docsmith/1.3.0, at: 2026-08-26T00:00:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
   - id: walktime-code
-    resource: lib/walktime.ts:1-111
+    resource: lib/walktime.ts:1-150
     title: Core venues, walk matrix, and capacity heuristic implementation
   - id: schema-code
     resource: db/schema.ts:1-92
     title: Drizzle D1 SQLite database tables and indexes
   - id: routes-code
-    resource: routes/api/events.ts:1-92
+    resource: routes/api/events.ts:1-104
     title: Hono API routing and defineHandler export convention
   - id: wrangler-config
-    resource: wrangler.jsonc:1-47
+    resource: wrangler.jsonc:1-51
     title: Cloudflare Workers, custom domain, and D1 database binding configuration
   - id: package-manifest
     resource: package.json:1-39
@@ -27,8 +27,8 @@ sources:
     resource: lib/auth.ts:1-101
     title: Session parsing, role verification, and adminGuard middleware
   - id: admin-page-code
-    resource: pages/admin.tsx:1-1307
-    title: Admin control center dashboard, ingestion controls, and run history UI
+    resource: pages/admin.tsx:1-237
+    title: Admin coordinator, dashboard hook wiring, and presentation composition
   - id: make-admin-code
     resource: scripts/make-admin.ts:1-169
     title: Administrator promotion CLI utility
@@ -45,8 +45,23 @@ sources:
     resource: components/ErrorBoundary.tsx:1-289
     title: React error boundary and recovery interface
   - id: cron-sync-code
-    resource: crons/sync-schedule.ts:1-45
-    title: Cloudflare Worker automated cron sync job and date window guards
+    resource: crons/sync-schedule.ts:1-112
+    title: Cloudflare Worker automated cron rotation, date guards, and scheduled ingestion
+  - id: home-page-code
+    resource: pages/index.tsx:1-412
+    title: Home coordinator, cross-domain hook wiring, and presentation composition
+  - id: home-types-code
+    resource: components/home/homeTypes.ts:1-84
+    title: Shared home page types and track color constants
+  - id: schedule-utils-code
+    resource: lib/scheduleUtils.ts:1-70
+    title: Pure schedule display, conflict, and walk-total functions
+  - id: squad-utils-code
+    resource: lib/squadUtils.ts:1-23
+    title: Pure squad overlap and self-invite functions plus URL cleanup
+  - id: share-code
+    resource: lib/share.ts:1-29
+    title: Native share and clipboard fallback utility
 ---
 
 # System Design — CyberDragon Companion App
@@ -79,7 +94,7 @@ sources:
 - **Authentication & Squads:** Register/login via WebAuthn passkeys or salted SHA-256 passwords (`routes/api/auth.ts`, `routes/api/auth/passkey.ts`).
 - **Calendar Export:** Generate RFC 5545 `.ics` payloads containing user-saved panels (`routes/api/export-ics.ts`).
 - **Live Ingestion:** Scrape and parse external schedule data into D1 SQLite (`lib/ingest.ts`, `routes/api/ingest.ts`).
-- **Admin-Driven Ingestion Control:** Restrict all schedule synchronization to authenticated administrators via a dedicated `/admin` dashboard supporting `sync`, `dry-run` preview, and emergency `hard-resync` modes (`pages/admin.tsx`, `routes/api/admin/ingest.ts`, `lib/auth.ts`).
+- **Ingestion Control:** Route manual synchronization through administrator-protected `/api/ingest` and `/api/admin/ingest` handlers. The scheduled Worker calls the logged ingestion entry point directly during its active date window (`pages/admin.tsx`, `routes/api/admin/ingest.ts`, `routes/api/ingest.ts`, `crons/sync-schedule.ts`).
 - **Role-Based Access Control:** Gate administrative endpoints and pages behind a `users.role` designation of `"admin"`, assigned through the `pnpm run make-admin <username>` CLI (`lib/auth.ts`, `scripts/make-admin.ts`).
 
 ### 2.2 Non-Functional Requirements
@@ -124,20 +139,25 @@ flowchart TD
 | Module | Location | Purpose | Key Exports / Methods |
 | :--- | :--- | :--- | :--- |
 | **Walk Time Engine** | `lib/walktime.ts` | Calculates inter-hotel transit minutes and room capacity heuristics | `calculateWalkTime()`, `normalizeVenue()`, `getVenueCapacityStatus()` |
-| **Venue Maps & Floor Plans** | `lib/maps.ts`, `lib/maps-data.ts` | Venue resolution, booth coordinate lookup, and offline floor plan caching | `resolveVenueMap()`, `getOfficialEventUrl()`, `getPolygonPointsString()` |
-| **Ingestion Engine** | `lib/ingest.ts` | Scrapes schedule web pages and generates change diffs; records every execution in `ingestion_runs` run history | `runIngestion()`, `runIngestionWithRunLog()` |
-| **SSR Page Loader** | `pages/index.server.ts` | Pre-fetches initial events, facets, and change history on server render | `loader = defineHandler(...)` |
-| **PWA App Shell** | `pages/index.tsx` | Main application shell managing tabs, state, and sheets | `Page()` |
-| **UI Components** | `components/CyberDragonUi.tsx` | Glass design system UI components | `TabBar`, `Toast`, `DataCard`, `ProgressMeter`, `Badge`, `Tag`, `Button` |
-| **Detail & Map Modals** | `components/PanelDetailModal.tsx`, `components/VenueMapModal.tsx` | Panel detail view with transit routing, offline interactive floor plan viewer, and Core-Apps rating links | `PanelDetailModal`, `VenueMapModal` |
-| **API Endpoints** | `routes/api/*.ts` | Edge HTTP handlers for schedule, auth, friends, and export | `export const GET = defineHandler(...)` |
-| **Auth Guard** | `lib/auth.ts` | Session token parsing, password hashing, database role refresh, and admin authorization | `parseToken()`, `hashPassword()`, `getUserFromContext()`, `adminGuard()` |
-| **Admin Dashboard** | `pages/admin.tsx`, `pages/admin.server.ts` | Ingestion control center with live logs, diff inspector, and run history | `AdminPage()`, `loader = defineHandler(...)` |
-| **Admin Endpoints** | `routes/api/admin/*.ts` | Admin-only ingestion execution, DB stats, and audit run queries | `export const POST = defineHandler(...)` |
-| **Admin CLI** | `scripts/make-admin.ts` | Promotes a registered user account to administrator | `makeAdmin()` |
-| **Feedback & Error Reporting** | `lib/errorReporting.ts`, `routes/api/feedback.ts`, `routes/api/feedback/[id].ts` | Automated crash capture, sensitive credential redaction, deduplication, feedback collection, and admin triage status transitions | `reportError()`, `setupGlobalErrorCatchers()`, `formatErrorMessage()` |
-| **Error Boundary & Recovery** | `components/ErrorBoundary.tsx` | React class Error Boundary with CyberDragon glass fallback UI & reset/reload actions | `ErrorBoundary` |
-| **Automated Sync Cron** | `crons/sync-schedule.ts` | Scheduled background schedule synchronizer (every 4h pre-con, every 30m during con, early-return guard outside active window) | `default defineScheduled(...)`, `isWithinActiveWindow()`, `cron` |
+| **Schedule Domain Utilities** | `lib/scheduleUtils.ts` | Holds pure venue parsing, day labels, conflict lookup, preceding-venue selection, and daily walk totals | `parseVenueRoom()`, `getDayEyebrow()`, `getPrecedingVenue()`, `checkEventConflict()`, `calculateDailyWalkMinutes()` |
+| **Squad & Share Utilities** | `lib/squadUtils.ts`, `lib/share.ts` | Calculates schedule overlap, detects self-invites, cleans URL parameters, and wraps native share with clipboard fallback | `calculateMutualOverlap()`, `isSelfInvite()`, `cleanUrlParam()`, `shareLink()` |
+| **Venue Maps & Floor Plans** | `lib/maps.ts`, `lib/maps-data.ts` | Resolves venue maps and booth coordinates for offline floor plan views | `resolveVenueMap()`, `getOfficialEventUrl()`, `getPolygonPointsString()` |
+| **Ingestion Engine** | `lib/ingest.ts` | Scrapes schedule pages, writes event changes, and records execution history | `runIngestion()`, `runIngestionWithRunLog()` |
+| **SSR Page Loader** | `pages/index.server.ts` | Pre-fetches initial events, facets, and change history for server rendering | `loader = defineHandler(...)` |
+| **Home Coordinator** | `pages/index.tsx` | Wires five domain hooks, derives cross-domain views, and composes tabs, banners, sheets, and detail modals | `HomePage()` |
+| **Home State Hooks** | `components/home/hooks/` | Own authentication, schedule filters, agenda, squad, synchronization, and browser preferences | `useHomeAuth()`, `useScheduleFilters()`, `useAgenda()`, `useSquad()`, `useAppSyncAndPrefs()` |
+| **Home Views** | `components/home/tabs/`, `components/home/modals/`, `components/home/HomeBanners.tsx`, `components/home/BottomTabBar.tsx` | Render the five app tabs and home overlays from coordinator-provided state | `ScheduleTab`, `AgendaTab`, `SquadTab`, `ChangesTab`, `ProfileTab` |
+| **Shared Home Types** | `components/home/homeTypes.ts` | Defines the canonical types shared by home hooks, tabs, and coordinator compatibility exports | `User`, `EventItem`, `UserEventItem`, `Conflict`, `EventChange`, `ToastState`, `TRACK_COLORS` |
+| **UI Components** | `components/CyberDragonUi.tsx` | Provides reusable CyberDragon Glass UI primitives | `TabBar`, `Toast`, `DataCard`, `ProgressMeter`, `Badge`, `Tag`, `Button` |
+| **Detail & Map Modals** | `components/PanelDetailModal.tsx`, `components/VenueMapModal.tsx` | Render panel details, transit routing, event sharing, and offline floor plans | `PanelDetailModal`, `VenueMapModal` |
+| **API Endpoints** | `routes/api/*.ts` | Handle schedules, authentication, squads, feedback, administration, and calendar export | Uppercase HTTP constants wrapped by `defineHandler()` |
+| **Auth Guard** | `lib/auth.ts` | Parses session tokens, hashes passwords, refreshes database roles, and authorizes administrators | `parseToken()`, `hashPassword()`, `getUserFromContext()`, `adminGuard()` |
+| **Admin Coordinator** | `pages/admin.tsx`, `pages/admin.server.ts` | Wires four admin hooks and composes ingestion, metrics, run-history, and feedback views | `AdminPage()`, `loader = defineHandler(...)` |
+| **Admin Hooks & Views** | `components/admin/` | Own admin auth, loaded data, ingestion execution, feedback transitions, shared types, and presentation components | `useAdminAuth()`, `useAdminDashboardData()`, `useAdminIngest()`, `useAdminFeedback()` |
+| **Admin Endpoints & CLI** | `routes/api/admin/*.ts`, `scripts/make-admin.ts` | Execute protected ingestion, expose metrics/run history, and promote registered users | HTTP constants wrapped by `defineHandler()`, `makeAdmin()` |
+| **Feedback & Error Reporting** | `lib/errorReporting.ts`, `routes/api/feedback.ts`, `routes/api/feedback/[id].ts` | Sanitize and persist crash reports and attendee feedback for admin triage | `reportError()`, `setupGlobalErrorCatchers()`, `formatErrorMessage()` |
+| **Error Boundary & Recovery** | `components/ErrorBoundary.tsx` | Renders the React recovery surface and reset/reload actions | `ErrorBoundary` |
+| **Automated Sync Cron** | `crons/sync-schedule.ts` | Rotates one live con day per scheduled tick and records the run | `default defineScheduled(...)`, `isWithinActiveWindow()`, `nextSyncDays()`, `cron` |
 ---
 
 ## 5. Database / Data Model
@@ -316,7 +336,7 @@ For step-by-step deployment and provisioning: `docs/guides/deployment-runbook.md
   - Attendee feedback submission validation, contact normalization, and admin-only feedback retrieval.
   - Error sanitization, Bearer/JWT/password token redaction, error signature deduplication, session rate limiting, and ErrorBoundary state transitions.
   - Cron schedule triggers, active window boundary evaluations, out-of-window skip logic, in-window D1 sync execution, and exact content hash verification.
-- **Live Test Result:** 102 tests executed, 102 passed, 0 failed across 12 test files (`pnpm test`, 2026-08-26).
+- **Live Test Result:** `pnpm test` executed 150 tests across 19 `tests/*.test.ts` files: 150 passed, 0 failed (2026-08-29).
 
 ---
 
@@ -349,3 +369,5 @@ For step-by-step deployment and provisioning: `docs/guides/deployment-runbook.md
 - Architecture Decision: `docs/decisions/0001-cloudflare-d1-self-host.md`
 - Deployment Runbook: `docs/guides/deployment-runbook.md`
 - Bundle Map: `docs/index.md`
+
+[^auth-guard-code]: Session parsing, role verification, and `adminGuard` middleware — `lib/auth.ts:1-101`

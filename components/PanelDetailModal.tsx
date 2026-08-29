@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { calculateWalkTime } from "../lib/walktime";
 import { resolveVenueMap, getOfficialEventUrl } from "../lib/maps";
 import { shareLink } from "../lib/share";
+import { parseSpeakers } from "../lib/scheduleUtils";
 import { VenueMapModal } from "./VenueMapModal";
 
 export interface EventItem {
@@ -51,12 +52,7 @@ export function PanelDetailModal({
   }, []);
 
   // Parse speakers into panelist avatars
-  const panelists = item.speakers
-    ? item.speakers
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
+  const panelists = parseSpeakers(item.speakers);
 
   return (
     <>

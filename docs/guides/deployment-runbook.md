@@ -3,13 +3,13 @@ type: Guide
 title: Cloudflare Deployment & D1 Operations Runbook
 description: Step-by-step runbook for provisioning, migrating, and deploying the CyberDragon app on Cloudflare Workers and D1.
 tags: [guide, runbook, cloudflare, deployment, d1, ci]
-generated: { by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }
+generated: { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }
 verified: [{ by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
   - id: wrangler-config
-    resource: wrangler.jsonc:1-47
+    resource: wrangler.jsonc:1-51
     title: Cloudflare Workers, custom domain, D1 database binding, and resource-limit configuration
   - id: ci-workflow
     resource: .github/workflows/ci.yml:1-44
@@ -50,7 +50,7 @@ sources:
    pnpm exec wrangler d1 create dragoncon-2026-db
    ```
 3. **Configure `wrangler.jsonc`:**
-   Ensure `wrangler.jsonc` specifies the generated `database_id`, binding `"DB"`, and `"migrations_dir": "./db/migrations"` [^wrangler-config].
+   Verify that `wrangler.jsonc` specifies the generated `database_id`, binding `"DB"`, and `"migrations_dir": "./db/migrations"` [^wrangler-config].
 4. **Generate Initial Migrations:**
    ```bash
    pnpm run db:generate
@@ -161,3 +161,9 @@ One operational trap these limits cannot catch: **Cloudflare does not prevent ov
 1. **Upgrade the account:** Cloudflare dashboard (dash.cloudflare.com) → **Workers & Pages** → **Plans** (self-serve "Activate"/"Upgrade" prompt on the Free plan) → subscribe to **Workers Paid** with a payment method on file. This is an account-level, self-serve change; it cannot be done via Wrangler or the API.
 2. **Set a budget alert (informational only):** **Billing** → **Billable Usage** → **Create budget alert**. Cloudflare has no hard spend cap on Workers usage — a budget alert only emails a warning past a chosen threshold, it does not pause or block the Worker.
 3. **Downgrade after the con:** Switch back to the Workers Free plan once Dragon Con 2026 con-week traffic ends (after Sep 7) to stop the recurring $5/mo charge. `runIngestion()` (`lib/ingest.ts`) already self-throttles to `DEFAULT_DETAIL_FETCH_BUDGET` event-detail fetches per invocation regardless of plan, so downgrading needs no code change. It is also safe because nothing ingests afterward: `isWithinActiveWindow` (`crons/sync-schedule.ts`) gates every scheduled run to Aug 24 – Sep 7 2026, and its 50-subrequest ceiling would not survive even one con day on the Free plan.
+
+## Provenance
+
+[^wrangler-config]: Cloudflare Workers, custom domain, D1 database binding, and resource-limit configuration — `wrangler.jsonc:1-51`
+[^package-scripts]: Deployment and database migration npm scripts — `package.json:8-16`
+[^make-admin-script]: Admin promotion CLI script — `scripts/make-admin.ts:1-169`

@@ -52,7 +52,7 @@ pnpm build
 
 ## Database & Migrations
 
-Database schemas are defined in `db/schema.ts` and managed via Drizzle:
+Drizzle manages database schemas defined in `db/schema.ts`:
 
 ```bash
 # Generate new migration files from schema changes
@@ -89,7 +89,7 @@ pnpm run deploy
 ```
 
 ### 3. Continuous Integration (GitHub Actions)
-Deployments are automated via `.github/workflows/deploy.yml` on push to `main`. Required repository secrets:
+`.github/workflows/deploy.yml` deploys on pushes to `main`. Required repository secrets:
 - `CLOUDFLARE_API_TOKEN` (Cloudflare API token with *Workers Scripts: Edit* and *D1: Edit* permissions)
 - `CLOUDFLARE_ACCOUNT_ID` (Cloudflare Account ID)
 

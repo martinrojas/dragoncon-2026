@@ -3,20 +3,20 @@ type: Decision
 title: "0001: Cloudflare Workers and D1 Self-Host Architecture"
 description: Architectural decision to deploy directly to Cloudflare Workers and D1 SQLite using Void's self-host backend.
 tags: [decision, adr, cloudflare, d1, hosting]
-generated: { by: docsmith/1.3.0, at: 2026-08-22T06:15:00Z }
+generated: { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }
 verified: [{ by: docsmith/1.3.0, at: 2026-08-22T06:15:00Z }]
 status: stable
 decision_status: accepted
 maintainer: CyberDragon Engineering
 sources:
   - id: wrangler-config
-    resource: wrangler.jsonc:1-19
+    resource: wrangler.jsonc:1-51
     title: Cloudflare Workers and D1 database binding configuration
   - id: deploy-workflow
-    resource: .github/workflows/deploy.yml:1-28
+    resource: .github/workflows/deploy.yml:1-48
     title: Cloudflare deployment CI/CD workflow
   - id: void-cli-cloudflare
-    resource: package.json:10-15
+    resource: package.json:8-16
     title: Package scripts targeting Cloudflare self-host backend
 ---
 
@@ -51,3 +51,8 @@ Deploy CyberDragon directly to the team's own **Cloudflare account** using Void'
    - *Reason for rejection:* Would drop server-rendered initial HTML, requiring heavy client-side initial data fetching and externalizing user passkey storage.
 3. **Waiting for Void Cloud Public Release:**
    - *Reason for rejection:* Indefinite timeline for Dragon Con 2026 deployment.
+
+## Provenance
+
+[^wrangler-config]: Cloudflare Workers and D1 database binding configuration — `wrangler.jsonc:1-51`
+[^deploy-workflow]: Cloudflare deployment CI/CD workflow — `.github/workflows/deploy.yml:1-48`

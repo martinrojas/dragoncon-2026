@@ -13,7 +13,7 @@ export const SEED_EVENTS = [
     durationMinutes: 60,
     day: "Sat",
     timeString: "10:00 AM - 11:00 AM",
-    speakers: "Dr. Coral Vance, Maya Lindqvist",
+    speakers: JSON.stringify(["Dr. Coral Vance", "Maya Lindqvist"]),
     contentHash: "hash-001",
   },
   {
@@ -27,7 +27,7 @@ export const SEED_EVENTS = [
     durationMinutes: 90,
     day: "Sat",
     timeString: "10:00 AM - 11:30 AM",
-    speakers: "Neil C., Shawn B., Elena Rostova",
+    speakers: JSON.stringify(["Neil C.", "Shawn B.", "Elena Rostova"]),
     contentHash: "hash-002",
   },
   {
@@ -41,7 +41,7 @@ export const SEED_EVENTS = [
     durationMinutes: 60,
     day: "Sat",
     timeString: "11:00 AM - 12:00 PM",
-    speakers: "Frank Weener, Mustard Queen",
+    speakers: JSON.stringify(["Frank Weener", "Mustard Queen"]),
     contentHash: "hash-003",
   },
   {
@@ -55,7 +55,7 @@ export const SEED_EVENTS = [
     durationMinutes: 60,
     day: "Sat",
     timeString: "2:00 PM - 3:00 PM",
-    speakers: "Maestro Buzz, Sarah Jenkins",
+    speakers: JSON.stringify(["Maestro Buzz", "Sarah Jenkins"]),
     contentHash: "hash-004",
   },
   {
@@ -69,7 +69,7 @@ export const SEED_EVENTS = [
     durationMinutes: 60,
     day: "Sat",
     timeString: "4:00 PM - 5:00 PM",
-    speakers: "G. R. Finch, Lyra Valentine",
+    speakers: JSON.stringify(["G. R. Finch", "Lyra Valentine"]),
     contentHash: "hash-005",
   },
   {
@@ -83,7 +83,7 @@ export const SEED_EVENTS = [
     durationMinutes: 60,
     day: "Sat",
     timeString: "10:30 PM - 11:30 PM",
-    speakers: "DJ Dragon, Captain Con",
+    speakers: JSON.stringify(["DJ Dragon", "Captain Con"]),
     contentHash: "hash-006",
   },
   {
@@ -97,7 +97,7 @@ export const SEED_EVENTS = [
     durationMinutes: 60,
     day: "Fri",
     timeString: "1:00 PM - 2:00 PM",
-    speakers: "K. Gibson, Ren Vance",
+    speakers: JSON.stringify(["K. Gibson", "Ren Vance"]),
     contentHash: "hash-007",
   },
   {
@@ -111,7 +111,7 @@ export const SEED_EVENTS = [
     durationMinutes: 60,
     day: "Thu",
     timeString: "6:00 PM - 7:00 PM",
-    speakers: "Skybridge Master, Transit Team",
+    speakers: JSON.stringify(["Skybridge Master", "Transit Team"]),
     contentHash: "hash-008",
   },
 ];

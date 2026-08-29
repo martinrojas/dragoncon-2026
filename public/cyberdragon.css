@@ -544,6 +544,7 @@ a:active {
   display: flex;
   justify-content: center;
   pointer-events: none;
+  z-index: 1000;
 }
 
 @media (min-width: 769px) {

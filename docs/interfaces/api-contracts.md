@@ -3,8 +3,8 @@ type: API Contracts
 title: CyberDragon Hono API Contracts
 description: Request and response schemas for all file-based Hono endpoints on Cloudflare Workers.
 tags: [api-contracts, interfaces, hono, endpoints]
-generated: { by: docsmith/1.3.0, at: 2026-08-27 }
-verified: [{ by: docsmith/1.3.0, at: 2026-08-26 }]
+generated: { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-26 }, { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -24,10 +24,10 @@ sources:
     resource: routes/api/user/privacy.ts:1-31
     title: User squad schedule privacy settings handler
   - id: auth-route
-    resource: routes/api/auth.ts:1-76
+    resource: routes/api/auth.ts:1-82
     title: Password authentication handler
   - id: passkey-route
-    resource: routes/api/auth/passkey.ts:1-222
+    resource: routes/api/auth/passkey.ts:1-237
     title: WebAuthn passkey registration and login ceremony handler
   - id: ics-route
     resource: routes/api/export-ics.ts:1-75
@@ -50,6 +50,9 @@ sources:
   - id: admin-runs-route
     resource: routes/api/admin/runs.ts:1-16
     title: Admin historical ingestion runs query handler
+  - id: admin-run-detail-route
+    resource: routes/api/admin/runs/[id].ts:1-27
+    title: Single admin ingestion run and captured log handler
   - id: feedback-route
     resource: routes/api/feedback.ts:1-69
     title: Attendee feedback submission and admin retrieval endpoint
@@ -57,8 +60,8 @@ sources:
     resource: routes/api/feedback/[id].ts:1-40
     title: Admin feedback triage status transition handler
   - id: cron-sync-handler
-    resource: crons/sync-schedule.ts:1-45
-    title: Scheduled cron trigger background handler
+    resource: crons/sync-schedule.ts:1-112
+    title: Scheduled cron rotation and ingestion handler
 ---
 
 # CyberDragon Hono API Contracts
@@ -201,7 +204,7 @@ Trigger manual schedule data synchronization from core-apps [^admin-ingest-route
     "maxDetailFetches": 50
   }
   ```
-- **Subrequest Safety:** `maxDetailFetches` bounds total event-detail fetches for the *whole* run, shared across every `days` entry rather than reset per day. Omit it to use the library default (`DEFAULT_DETAIL_FETCH_BUDGET` in `lib/ingest.ts`, currently 400), sized to stay under the Worker's configured `limits.subrequests` in `wrangler.jsonc`.
+- **Subrequest Safety:** `maxDetailFetches` bounds total event-detail fetches for the *whole* run, shared across every `days` entry rather than reset per day. Omit it to use `DEFAULT_DETAIL_FETCH_BUDGET = 1800` from `lib/ingest.ts`, sized below the Worker's configured `limits.subrequests` in `wrangler.jsonc`.
 - **Response Shape:**
   ```json
   {
@@ -233,7 +236,7 @@ Administrative health checks, metrics, and audit history [^admin-stats-route] [^
 
 - **`GET /api/admin/stats`**: Returns active event counts, deleted event counts, per-day breakdowns, total users, and latest ingestion run summary.
 - **`GET /api/admin/runs`**: Returns 50 most recent ingestion executions — manual admin runs, legacy `POST /api/ingest` calls, and scheduled cron runs (attributed to `user_id: "cron"`) — with mode, status, stats summary, and completed timestamps.
-- **`GET /api/admin/runs/:id`**: Returns a single ingestion execution record including full captured console logs.
+- **`GET /api/admin/runs/:id`**: Returns a single ingestion execution record including full captured console logs [^admin-run-detail-route].
 
 ---
 
@@ -339,7 +342,24 @@ In addition to HTTP endpoints, the Cloudflare Worker executes background sync tr
 
 - **Cron Schedules:**
   - `"0 */4 * 8 *"` (Every 4h in August)
-  - `"0 */4 1-2 9 *"` (Every 4h Sept 1–2)
-  - `"*/30 * 3-7 9 *"` (Every 30m during Dragon Con Sept 3–7)
+  - `"0 */2 1-2 9 *"` (Every 2h Sept 1–2)
+  - `"*/10 * 3-7 9 *"` (Every 10m during Dragon Con Sept 3–7)
 - **Payload / Context:** Invoked with `(controller: ScheduledController, env: CloudEnv['Bindings'], ctx: ExecutionContext)`.
 - **Behavior:** Checks `isWithinActiveWindow()`. If outside Aug 24 – Sep 7 2026, early-returns. Otherwise executes `runIngestionWithRunLog({ mode: "sync" })` — recording the run in `ingestion_runs` history (attributed `user_id: "cron"`) — without passing through HTTP auth guards.
+
+## Provenance
+
+[^events-route]: Event search, filter, and facet handler — `routes/api/events.ts:1-104`
+[^changes-route]: Recent schedule changes handler — `routes/api/changes.ts:1-21`
+[^schedule-route]: User schedule and conflict detection handler — `routes/api/schedule.ts:1-120`
+[^friends-route]: Squad friendship, schedule privacy, and full agenda handler — `routes/api/friends.ts:1-147`
+[^privacy-route]: User squad schedule privacy settings handler — `routes/api/user/privacy.ts:1-31`
+[^auth-route]: Password authentication handler — `routes/api/auth.ts:1-82`
+[^passkey-route]: WebAuthn passkey registration and login ceremony handler — `routes/api/auth/passkey.ts:1-237`
+[^ics-route]: RFC 5545 iCalendar export handler — `routes/api/export-ics.ts:1-75`
+[^admin-ingest-route]: Admin schedule ingestion execution handler — `routes/api/admin/ingest.ts:1-31`
+[^admin-stats-route]: Admin database stats handler — `routes/api/admin/stats.ts:1-52`
+[^admin-runs-route]: Admin historical ingestion runs query handler — `routes/api/admin/runs.ts:1-16`
+[^admin-run-detail-route]: Single admin ingestion run and captured log handler — `routes/api/admin/runs/[id].ts:1-27`
+[^legacy-ingest-route]: Legacy admin ingestion trigger — `routes/api/ingest.ts:1-29`
+[^feedback-route]: Attendee feedback submission and admin retrieval endpoint — `routes/api/feedback.ts:1-69`

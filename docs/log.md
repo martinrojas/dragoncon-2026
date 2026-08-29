@@ -3,6 +3,82 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-29 — Post-Refactor Bundle Revalidation
+
+- **Type:** Documentation maintain pass after the admin and home-page decompositions.
+- **Architecture:** Rewrote `docs/SYSTEM_DESIGN.md` module design around the 412-line home coordinator, 237-line admin coordinator, their hooks and presentation components, and the extracted schedule, squad, and share utilities.
+- **New concepts:** Added `docs/rules/frontend-composition.md` for coordinator, mirror-state, SSR restore-gate, and timestamp rules; added `docs/interfaces/share-and-deep-links.md` for native sharing, clipboard fallback, and `?event=`/`?invite=` contracts.
+- **Corrected drift:** Updated the ingestion default from 400 to 1800 in `docs/interfaces/api-contracts.md`; corrected the September cron cadences to 2 hours and 10 minutes; documented `GET /api/admin/runs/:id`; refreshed source ranges; repointed `AGENTS.md` at extracted modules; registered `tests/events-filter.test.ts`.
+- **Source lifecycle:** Independent item-by-item gap analyses certified the 2026-08-28 squad source pair and 2026-08-29 index-refactor source pair as `✓ harvested (safe to delete)`. This pass retained all four source files.
+- **Verification:** `pnpm test` executed 150 tests: 150 passed, 0 failed. `npx tsc --noEmit` returned zero diagnostics. `pnpm build` completed after transforming 633 SSR modules and 84 client modules.
+- **Unverified evidence:** The 2026-08-27 production CPU/wall-time measurement and external Cloudflare platform limits remain labeled inferred, not verified locally.
+
+Docs-freshness: head=d81e75bd09d4d8c2907ca865a67daadda4dee054 date=2026-08-29 pass=maintain
+
+---
+## 2026-08-29 — Index Page Coordinator Refactor Complete (Task 5/5)
+
+- **Type:** Refactor (final task of the index-page decomposition plan — collapsed the 2,701-line `pages/index.tsx` monolith into a 412-line coordinator).
+- **Scope:**
+  - `pages/index.tsx`: Now wires the 5 extracted hooks (`useHomeAuth`, `useScheduleFilters`, `useAgenda`, `useSquad`, `useAppSyncAndPrefs`), 5 tab components (`ScheduleTab`, `AgendaTab`, `SquadTab`, `ChangesTab`, `ProfileTab`), and 3 modal/overlay components (`ScheduleFilterSheet`, `AuthModal`, `PanelDetailModal`) plus `ToastNotification`. Preserves 100% of the original exports (`User`, `EventItem`, `UserEventItem`, `Conflict`, `EventChange`, `ToastState`, `TRACK_COLORS`, `parseTimeDisplay`, `parseVenueRoom`, `getDayEyebrow`, default `HomePage`) for backward compatibility.
+  - `components/home/BottomTabBar.tsx` and `components/home/HomeBanners.tsx`: Two new small presentational extractions (mobile tab bar; sync-status + squad-invite banners) split out of the coordinator during this task to keep page-level wiring focused on composition rather than markup.
+  - Broke the circular data dependency between `useScheduleFilters` (needs live agenda conflict/item data for its "hide conflicts" & walkability filters) and `useAgenda` (needs `useScheduleFilters`'s `selectedDay`/`eventsList`) using a small coordinator-owned mirror-state-plus-sync-effect, avoiding edits to the already-landed hook files.
+  - Re-applied the Schedule tab's "Saved" segmented-control filter (and its time-slot regrouping) on top of `useScheduleFilters().filteredEvents`, since that hook only owns day/track/location/search filtering, not agenda data.
+  - `public/sw.js`: Bumped `CACHE_NAME` to `dragoncon-pwa-v24`.
+- **Verification:** 150/150 unit tests pass (`pnpm test`), SSR + client production builds clean (`pnpm build`), zero TypeScript diagnostics (`npx tsc --noEmit`).
+
+---
+## 2026-08-29 — Index Page Refactoring Architecture & Implementation Plan
+
+- **Type:** Architecture & Plan (spec and implementation plan for decomposing the 2,701-line index page into focused domain libraries, custom hooks, tabs, and modals).
+- **Artifacts Created:**
+  - `docs/superpowers/specs/2026-08-29-index-page-refactor-spec.md`: Comprehensive design specification detailing goals, code smell resolution, architecture breakdown, and invariants.
+  - `docs/superpowers/plans/2026-08-29-index-page-refactor.md`: 5-task bite-sized execution plan with TDD cycles, interface contracts, and verification commands.
+- **Planned Scope:**
+  - Pure domain utilities: `lib/scheduleUtils.ts` and `lib/squadUtils.ts` with unit tests in `tests/schedule-logic.test.ts` and `tests/squad-logic.test.ts`.
+  - Custom hooks: `useHomeAuth`, `useScheduleFilters`, `useAgenda`, `useSquad`, `useAppSyncAndPrefs`.
+  - Presentation tabs: `ScheduleTab`, `AgendaTab`, `SquadTab`, `ChangesTab`, `ProfileTab`.
+  - Presentation modals: `ScheduleFilterSheet`, `AuthModal`, `ToastNotification`.
+  - Coordinator refactor: `pages/index.tsx` (~120 lines).
+
+---
+## 2026-08-29 — Admin Page Refactoring Patterns & Hook Decomposition
+
+- **Type:** Refactor (applied Fowler refactoring catalog — extracted custom hooks, isolated modal components, simplified conditionals, and decomposed server aggregation).
+- **Refactorings Applied:**
+  - **Extract Custom Hooks:** Decomposed `pages/admin.tsx` state management into 4 single-responsibility hooks:
+    - `components/admin/useAdminAuth.ts`: Auth state, login form handling, and error reporting lifecycle.
+    - `components/admin/useAdminDashboardData.ts`: Admin runs, D1 statistics, and feedback data polling.
+    - `components/admin/useAdminIngest.ts`: Sync mode, day chips, throttling, execution triggers, terminal logging, and log filtering.
+    - `components/admin/useAdminFeedback.ts`: Feedback triage status transitions and active filter computation.
+  - **Extract Component (Single Responsibility):**
+    - `components/admin/AdminHardResyncModal.tsx`: Extracted from `AdminIngestControls.tsx`.
+    - `components/admin/AdminRunLogModal.tsx`: Extracted from `AdminPastRunsTable.tsx`.
+  - **Simplify Conditionals & Organize Data:**
+    - Replaced nested ternaries in `AdminPastRunsTable.tsx` and `AdminFeedbackList.tsx` with declarative lookup maps (`RUN_MODE_STYLES`, `RUN_STATUS_STYLES`, `FEEDBACK_KIND_STYLES`, `FEEDBACK_STATUS_STYLES`) and safe stats parser `parseRunStats()`.
+  - **Extract Method (Server Loader):**
+    - Extracted `tallyEventStats()` in `pages/admin.server.ts`.
+  - **PWA Cache Versioning:** Bumped `CACHE_NAME` in `public/sw.js` to `dragoncon-pwa-v21`.
+- **Verification:** 139/139 unit tests pass (`pnpm test`), SSR + client production builds clean (`pnpm build`).
+
+---
+## 2026-08-29 — Admin Dashboard Modularization & Component Decomposition
+
+- **Type:** Refactor (code structure & maintainability — decomposed 1,325-line monolith into dedicated subcomponents).
+- **Scope & Architecture:**
+  - `pages/admin.tsx`: Refactored into a concise coordinator (~360 lines) orchestrating data loading, sync execution, and state transitions while maintaining 100% backwards compatibility for exported types (`User`, `IngestionRun`, `FeedbackItem`, etc.) and `formatRunTimestamp`.
+  - `components/admin/adminTypes.ts`: Centralized shared types, constants (`FEEDBACK_ACTIONS`, `DAY_OPTIONS`), and `formatRunTimestamp`.
+  - `components/admin/AdminAccessDenied.tsx`: Extracted restricted view and admin login form.
+  - `components/admin/AdminMetricsCards.tsx`: Extracted D1 database overview statistics cards.
+  - `components/admin/AdminIngestControls.tsx`: Extracted sync mode selector, day filter chips, throttle limiter, execute trigger, and hard resync confirmation modal.
+  - `components/admin/AdminDiffSummary.tsx`: Extracted diff summary badges and expandable event change lists.
+  - `components/admin/AdminTerminalConsole.tsx`: Extracted live execution terminal with color-coded log lines and filtering.
+  - `components/admin/AdminPastRunsTable.tsx`: Extracted ingestion run history table and run log modal.
+  - `components/admin/AdminFeedbackList.tsx`: Extracted attendee feedback triage list and lifecycle actions.
+  - `public/sw.js`: Bumped `CACHE_NAME` to `dragoncon-pwa-v20` per PWA cache versioning policy.
+- **Verification:** 136/136 unit tests pass (`pnpm test`), SSR + client production builds clean (`pnpm build`).
+
+---
 ## 2026-08-28 — Track Exclusion Filters & Persisted Filter State
 
 - **Type:** Feature (schedule filtering — "show everything except these tracks", filter preferences survive reloads).

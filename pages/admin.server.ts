@@ -4,9 +4,7 @@ import { events, ingestionRuns, users } from "../db/schema.ts";
 
 export type Props = InferProps<typeof loader>;
 
-export const loader = defineHandler(async () => {
-  const eventRows = await db.select({ isDeleted: events.isDeleted, day: events.day }).from(events);
-
+export function tallyEventStats(eventRows: Array<{ isDeleted: number; day: string | null }>) {
   let totalActiveEvents = 0;
   let totalDeletedEvents = 0;
   const eventsByDay: Record<string, number> = {};
@@ -22,11 +20,17 @@ export const loader = defineHandler(async () => {
     }
   }
 
+  return { totalActiveEvents, totalDeletedEvents, eventsByDay };
+}
+
+export const loader = defineHandler(async () => {
+  const eventRows = await db.select({ isDeleted: events.isDeleted, day: events.day }).from(events);
+  const { totalActiveEvents, totalDeletedEvents, eventsByDay } = tallyEventStats(eventRows);
+
   const userRows = await db.select({ id: users.id }).from(users);
   const totalUsers = userRows.length;
 
   const initialRuns = await db.select().from(ingestionRuns).orderBy(desc(ingestionRuns.id)).limit(20);
-
   return {
     totalEvents: totalActiveEvents,
     totalActiveEvents,

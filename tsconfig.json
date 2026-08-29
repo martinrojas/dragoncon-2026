@@ -7,8 +7,11 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "types": [
-      "void/env"
+      "void/env",
+      "vite/client"
     ],
     "jsx": "react-jsx"
   },
@@ -19,6 +22,8 @@
     "middleware",
     "crons",
     "queues",
-    "db"
+    "db",
+    "components",
+    "lib"
   ]
 }

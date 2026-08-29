@@ -3,16 +3,17 @@ type: Domain Rules
 title: Schedule Ingestion Budget & Ordering Rules
 description: Invariants governing the shared detail-fetch budget, smallest-first day ordering, past-day skipping, and batched writes in runIngestion.
 tags: [ingestion, cron, budget, d1]
-generated: { by: docsmith/1.3.0, at: 2026-08-27 }
+generated: { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }
+verified: [{ by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }]
 status: stable
 maintainer: CyberDragon Engineering
 sources:
   - id: ingest-module
-    resource: lib/ingest.ts:8-43
-    title: ID_CHUNK/ROW_CHUNK parameter sizing, DEFAULT_DETAIL_FETCH_BUDGET, and the four per-invocation ceilings
+    resource: lib/ingest.ts:8-88
+    title: ID_CHUNK/ROW_CHUNK parameter sizing, browser fallback budget, detail-fetch budget, and invocation ceilings
   - id: ingest-filter
-    resource: lib/ingest.ts:207-242
-    title: Weekday→Sep++N alias map and calendar-aware isFutureConDayParam past-day filter
+    resource: lib/ingest.ts:207-280
+    title: Weekday-to-day alias map and calendar-aware past-day filter
   - id: ingest-tests
     resource: tests/ingest-modes.test.ts:972-1045
     title: Budget bounds/wiring and the D1 100-bound-parameter regression test
@@ -28,6 +29,9 @@ sources:
   - id: wrangler-limits
     resource: wrangler.jsonc:9-14
     title: Workers subrequests ceiling (2000) that caps per-invocation detail budgets
+  - id: run-log-entrypoint
+    resource: lib/ingest.ts:868-872
+    title: Logged ingestion entry point required by routes and cron
   - id: session-log
     resource: docs/log.md
     title: 2026-08-26 starvation postmortem (root cause, rejected approaches)
@@ -37,18 +41,21 @@ sources:
 
 ## Budget invariants
 
+External platform ceilings and production measurements in this concept are inferred, not verified locally. The configured application limits, constants, algorithms, and regression tests were verified against this repository.
+
 - Four separate per-invocation ceilings apply, and the fetch budget is **not** the tightest. In order of how close a full con day comes to each:
 
   | Ceiling | Value | Cost of a 691-event day |
   |---|---|---|
   | **CPU** (`limits.cpu_ms`) | 10,000 ms (pinned; cron handlers are allowed 15 min) | ~2.9 s sliced — but **~12.6 s unsliced**, which kills the invocation |
-  | **D1 queries** | 1,000 (D1-side cap, independent of subrequests) | ~235 batched — but **~1,382 per-row** |
+  | **D1 queries** | 1,000 (D1-side cap; D1 operations also consume Worker subrequests) | ~235 batched — but **~1,382 per-row** |
   | **Subrequests** | 2,000 (pinned; Paid default is 10,000) | ~930 (fetches + D1) |
   | **Detail fetches** | `DEFAULT_DETAIL_FETCH_BUDGET = 1800` | 691 |
 
 - `DEFAULT_DETAIL_FETCH_BUDGET = 1800` is shared across the **whole invocation**, not per day [^ingest-module]. Cron passes no override; admin's throttle dropdown supplies its own, and its "full" option resolves to *this default* (it previously resolved to 400, the smallest value in the list). A test asserts the constant stays inside `[700, 1900]` [^ingest-tests].
-- **Raising the fetch budget alone cannot complete a weekend day.** Production measurement puts a full-document parse at **~18 ms CPU per event** [^prod-measurement], so the CPU pin caps an invocation near **548 events** — below Sunday (637), Saturday (660) and Friday (691). `sliceDetailRegion` cuts this ~4.4× to ~4 ms/event (~2.7 s for Sunday), validated against 12 live detail pages with byte-identical field extraction, and is what actually makes a full day completable [^ingest-module].
-- Under-sizing any ceiling is not merely slow, it is **lossy**: a truncated or killed day skips its deletion sweep, so cancellations stop being detected. Production has never run the sweep on Fri/Sat/Sun.
+- `BROWSER_FALLBACK_BUDGET = 150` separately caps browser-rendered retries after direct upstream requests return `403`; it does not raise the total detail-fetch budget [^ingest-module].
+- Raising the fetch budget alone cannot complete a weekend day under the recorded unsliced CPU measurement (inferred, not verified). The measurement places a full-document parse near 18 ms CPU per event [^prod-measurement], while `sliceDetailRegion` reduces the parsed HTML region before Cheerio loads it [^ingest-module].
+- A truncated or killed day skips its deletion sweep, so cancellations stop being detected. The historical statement that production had not run the sweep on Friday, Saturday, or Sunday is inferred, not verified [^session-log].
 - Day listings are walked to exhaustion, never blind-sliced. A day that runs out of budget mid-listing sets `truncated`, and **`truncated` suppresses the deletion sweep** for that day: an incomplete scrape cannot distinguish "removed upstream" from "not attempted" [^session-log].
 - **Rejected: skipping detail fetches for unchanged listing rows.** Comparing a listing entry's title/time against the stored row would cut ~90% of fetches at a tight cadence, but track, speakers, room and description exist *only* on the detail page — an event moved to another room, or a swapped panelist, would go undetected until a hard-resync. Two existing tests encode that contract (`track/speakers-only changes`, `migrated content hash`) and both fail under the skip; it was implemented, proven wrong by those tests, and reverted [^session-log]. If per-tick cost ever needs cutting, rotate detail refreshes across ticks (bounded staleness) rather than skipping them on a field compare.
 
@@ -58,7 +65,7 @@ sources:
 
 ## Fetch concurrency rule
 
-- Detail pages are fetched in waves of `DETAIL_CONCURRENCY = 6` [^ingest-concurrency], the documented Workers ceiling on simultaneous connections awaiting response headers; beyond six, fetches merely queue [^wrangler-limits]. Measured against live upstream: **625 → 152 ms per event (4.1×)**, taking Sunday's 637 events from **~6.6 min to ~1.6 min** of wall time. CPU is unaffected — parsing is still single-threaded — so this buys only latency, which is what a 10-minute cadence needs given Cloudflare does not prevent overlapping cron runs [^cron-rotation].
+- Detail pages are fetched in waves of `DETAIL_CONCURRENCY = 6` [^ingest-concurrency]. The six-connection platform explanation and the recorded 625-to-152 ms per-event improvement are inferred, not verified locally. CPU parsing remains single-threaded, while `CADENCE_MS` defines the scheduled tick intervals [^cron-rotation].
 - **The cursor advances by the wave's actual length, never by the stride.** A wave trimmed by the remaining budget must leave the cursor on the first unfetched event, so the next pass observes an exhausted budget and marks the day `truncated`. Advancing by the full stride skipped that check whenever a trimmed wave ran off the end of the listing, which let the deletion sweep run against a partial scrape — a real regression, caught by the existing truncation tests [^ingest-tests].
 - Results are appended in **listing order, not completion order**, so `parsedItems`, the diff summary and logs stay deterministic regardless of which page returns first. A test forces reversed completion inside a wave via microtask yields (no wall-clock delays) and fails if results are appended as they resolve [^ingest-tests].
 - A failure inside a wave costs exactly itself: `fetchAndParse` returns `null` on a bad status or a throw, logging and counting exactly as the sequential path did, and its siblings still persist [^ingest-tests].
@@ -83,13 +90,15 @@ sources:
 ## Write isolation
 
 - Existing rows pre-read in chunked `IN()` statements; creates flush as multi-row inserts with **per-row replay fallback** — a single poisoned row fails alone with `errors+=1` and its siblings persist byte-for-byte; lastSeen refreshes batch into one bulk UPDATE [^ingest-tests]. Sizing of those statements is the *Write sizing rule* above.
+- HTTP routes and the scheduled handler must call `runIngestionWithRunLog()` rather than `runIngestion()` directly so each execution gets an `ingestion_runs` record [^run-log-entrypoint].
 - `db.batch()` would collapse a flush into one round trip (drizzle's D1 driver exposes it), but per-statement parameter limits still apply, so it is an optimisation on top of correct `ROW_CHUNK` sizing, not a substitute. Not adopted: the test fake would need a `batch()` shim and ~235 D1 queries is already far inside the 1,000 cap.
 
-[^ingest-module]: `lib/ingest.ts:8-43`, `lib/ingest.ts:143-178`
-[^ingest-filter]: `lib/ingest.ts:207-242`
+[^ingest-module]: `lib/ingest.ts:8-88`, `lib/ingest.ts:143-178`
+[^ingest-filter]: `lib/ingest.ts:207-280`
 [^ingest-tests]: `tests/ingest-modes.test.ts:15-39`, `tests/ingest-modes.test.ts:972-1045`, `tests/ingest-modes.test.ts:1062-1180`
 [^ingest-concurrency]: `lib/ingest.ts:22-26`, `lib/ingest.ts:388-489`
 [^prod-measurement]: Workers Logs, admin sync of `Sep++6` (2026-08-27): `cpuTimeMs: 7300`, `wallTimeMs: 258164`, 400 detail fetches of 637 listed events, `TRUNCATED`
 [^cron-rotation]: `crons/sync-schedule.ts:13-60`
 [^wrangler-limits]: `wrangler.jsonc:8-15`
 [^session-log]: `docs/log.md`, entries 2026-08-26 and 2026-08-27
+[^run-log-entrypoint]: `lib/ingest.ts:868-872`

@@ -1,5 +1,4 @@
 import * as cheerio from "cheerio";
-import type { InferInsertModel } from "drizzle-orm";
 import { and, db, eq, inArray } from "void/db";
 import { eventChanges, events, ingestionRuns } from "../db/schema.ts";
 import { getRuntimeBinding } from "void/_env";
@@ -516,8 +515,18 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
         $d(".section_heading").each((_, heading) => {
           if ($d(heading).text().trim() === "Speakers") {
             $d(heading).parent().find("a").each((_, spk) => {
-              const name = $d(spk).text().trim();
-              if (name && name !== "Speakers") speakers.push(name);
+              const $spk = $d(spk);
+              const lineTwo = $spk.find(".line.two").text().trim();
+              const lineOne = $spk.find(".line.one").text().trim();
+              const rawText = $spk.text().trim();
+              const nameCandidate =
+                lineTwo ||
+                (lineOne && !/^(?:Speaker|Speakers|Moderator|Panelist|Guest|DJ)$/i.test(lineOne) ? lineOne : "") ||
+                rawText;
+              if (nameCandidate && nameCandidate !== "Speakers" && nameCandidate !== "Speaker") {
+                const cleaned = nameCandidate.replace(/\s+/g, " ").trim();
+                if (cleaned) speakers.push(cleaned);
+              }
             });
           }
         });
@@ -629,8 +638,8 @@ export async function runIngestion(options: IngestOptions = {}): Promise<IngestR
       }
     }
 
-    type NewEventRow = InferInsertModel<typeof events>;
-    type NewChangeRow = InferInsertModel<typeof eventChanges>;
+    type NewEventRow = typeof events.$inferInsert;
+    type NewChangeRow = typeof eventChanges.$inferInsert;
     const pendingCreates: Array<{ event: NewEventRow; change: NewChangeRow }> = [];
     const rehashRows: Array<{ id: string; contentHash: string }> = [];
     const touchIds: string[] = [];

@@ -3,7 +3,7 @@ type: Domain Rules
 title: Cloudflare Platform Limits & Ingestion Feature Fit
 description: Documented Workers/D1/Cron limits this app sizes against, which platform features do and do not help the scraper, and how production CPU was measured.
 tags: [cloudflare, workers, d1, cron, limits, ingestion]
-generated: { by: docsmith/1.3.0, at: 2026-08-27 }
+generated: { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }
 status: stable
 maintainer: CyberDragon Engineering
 sources:
@@ -43,6 +43,8 @@ sources:
 
 ## Documented per-invocation limits (Workers Paid, checked 2026-08-27)
 
+External platform limits and product behavior in this concept come from vendor references and are inferred, not verified locally. Repository configuration and code references are locally checkable.
+
 | Limit | Value | Source |
 |---|---|---|
 | Subrequests per invocation | 50 Free · 10,000 Paid default · configurable to 10M | [^cf-workers-limits] [^cf-subrequests-changelog] |
@@ -58,14 +60,14 @@ Our own pins live in `wrangler.jsonc` (`subrequests: 2000`, `cpu_ms: 10000`) and
 
 ## Measurement practice
 
-Local Node timings are proxies only: parsing measured at **44 ms/event locally** came out **~18 ms/event in production workerd** (~2.4× faster). Authoritative numbers come free from Workers Logs — `observability.logs.invocation_logs: true` makes each invocation record `cpuTimeMs` and `wallTimeMs`. Calibrate before sizing anything against `cpu_ms` [^prod-measurement].
+The recorded 2026-08-27 comparison between local Node parsing and production workerd is inferred, not verified locally. Workers invocation logs expose `cpuTimeMs` and `wallTimeMs` because `observability.logs.invocation_logs` is enabled in `wrangler.jsonc` [^prod-measurement].
 
 ## Feature fit for the ingestion workload
 
 | Feature | Verdict |
 |---|---|
 | Raising our own `limits.*` pins | First lever. Cheapest headroom available; raises worst-case spend, nothing else. |
-| Higher fetch budgets | Does nothing while CPU binds — see the ceiling table in `rules/ingestion-budget.md`. |
+| Higher fetch budgets | Does nothing while CPU binds — see the ceiling table in `docs/rules/ingestion-budget.md`. |
 | Reducing parse work (parse region only) | The lever that made full-day completion possible; keep output byte-identical or the data integrity is affected. |
 | Concurrent fetch waves (≤6) | Latency only. CPU is single-threaded JavaScript, so waves never reduce CPU cost. |
 | **Workflows** | ✗ — subrequests are counted per Workflow *instance*, not per step [^cf-workflows-limits]; does not lift the fetch ceiling. Per-step CPU budgets are its benefit, and cron already grants more. |
