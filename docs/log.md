@@ -3,6 +3,18 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-08-29 — Index Page Coordinator Refactor Complete (Task 5/5)
+
+- **Type:** Refactor (final task of the index-page decomposition plan — collapsed the 2,701-line `pages/index.tsx` monolith into a 412-line coordinator).
+- **Scope:**
+  - `pages/index.tsx`: Now wires the 5 extracted hooks (`useHomeAuth`, `useScheduleFilters`, `useAgenda`, `useSquad`, `useAppSyncAndPrefs`), 5 tab components (`ScheduleTab`, `AgendaTab`, `SquadTab`, `ChangesTab`, `ProfileTab`), and 3 modal/overlay components (`ScheduleFilterSheet`, `AuthModal`, `PanelDetailModal`) plus `ToastNotification`. Preserves 100% of the original exports (`User`, `EventItem`, `UserEventItem`, `Conflict`, `EventChange`, `ToastState`, `TRACK_COLORS`, `parseTimeDisplay`, `parseVenueRoom`, `getDayEyebrow`, default `HomePage`) for backward compatibility.
+  - `components/home/BottomTabBar.tsx` and `components/home/HomeBanners.tsx`: Two new small presentational extractions (mobile tab bar; sync-status + squad-invite banners) split out of the coordinator during this task to keep page-level wiring focused on composition rather than markup.
+  - Broke the circular data dependency between `useScheduleFilters` (needs live agenda conflict/item data for its "hide conflicts" & walkability filters) and `useAgenda` (needs `useScheduleFilters`'s `selectedDay`/`eventsList`) using a small coordinator-owned mirror-state-plus-sync-effect, avoiding edits to the already-landed hook files.
+  - Re-applied the Schedule tab's "Saved" segmented-control filter (and its time-slot regrouping) on top of `useScheduleFilters().filteredEvents`, since that hook only owns day/track/location/search filtering, not agenda data.
+  - `public/sw.js`: Bumped `CACHE_NAME` to `dragoncon-pwa-v24`.
+- **Verification:** 150/150 unit tests pass (`pnpm test`), SSR + client production builds clean (`pnpm build`), zero TypeScript diagnostics (`npx tsc --noEmit`).
+
+---
 ## 2026-08-29 — Index Page Refactoring Architecture & Implementation Plan
 
 - **Type:** Architecture & Plan (spec and implementation plan for decomposing the 2,701-line index page into focused domain libraries, custom hooks, tabs, and modals).
