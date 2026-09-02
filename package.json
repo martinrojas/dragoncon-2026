@@ -30,7 +30,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "@void/react": "0.10.13",
     "babel-plugin-react-compiler": "^1.0.0",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vite-plus": "^0.3.0",
     "void": "0.10.13"
