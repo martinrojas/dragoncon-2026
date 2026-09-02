@@ -17,23 +17,23 @@
   },
   "dependencies": {
     "@simplewebauthn/browser": "^13.3.0",
-    "@simplewebauthn/server": "^13.3.2",
+    "@simplewebauthn/server": "^13.3.3",
     "cheerio": "^1.2.0",
-    "hono": "^4.11.9",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "hono": "^4.13.5",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@rolldown/plugin-babel": "^0.2.3",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "@void/react": "0.10.12",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@void/react": "0.10.13",
     "babel-plugin-react-compiler": "^1.0.0",
     "typescript": "^5.9.3",
-    "vite": "^8.0.10",
-    "vite-plus": "^0.1.21",
-    "void": "0.10.12"
+    "vite": "^8.2.2",
+    "vite-plus": "^0.3.0",
+    "void": "0.10.13"
   },
   "packageManager": "pnpm@11.0.9"
 }
