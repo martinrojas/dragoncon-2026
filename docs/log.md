@@ -11,8 +11,7 @@ Entries are listed in reverse chronological order (newest first).
 - **Privacy:** Aggregation reduces per-user rows to counts and bucket histograms before leaving the Worker; anonymous traffic stays covered by Cloudflare Web Analytics.
 - **Cache:** `public/sw.js` `CACHE_NAME` bumped `dragoncon-pwa-v25` → `dragoncon-pwa-v26`.
 - **Verification:** `pnpm test` 154/154 passed (two new `tallyUsageStats` cases incl. the ET-date rollover for post-midnight UTC saves); `pnpm build` clean (634 SSR / 85 client modules). E2E against `pnpm dev` + local D1: API returns `totalSaves: 0` with all four buckets on an empty table, and with 12 real saves the browser-rendered panel shows `TOTAL SAVES: 12`, `ACTIVE USERS: 3/4`, populated bars (screenshot-verified).
-
-Docs-freshness: head=d81e75bd09d4d8c2907ca865a67daadda4dee054 date=2026-09-02 pass=feature
+- **Docs:** `deployment-runbook.md` §7 now records the local D1 state split (`.void/v3` dev server vs `.wrangler/state` Wrangler CLI) and the seed-via-`POST /api/auth` + `make-admin` recipe; removed an invalid `Docs-freshness:` line from this entry (write authority: bundle establish/maintain passes).
 
 ---
 
