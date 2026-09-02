@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shareLink } from "../lib/share.ts";
+import { shareLink, copyText } from "../lib/share.ts";
 
 function setNavigator(value: unknown) {
   Object.defineProperty(globalThis, "navigator", {
@@ -50,4 +50,41 @@ test("shareLink returns { shared: false, copied: false } on user abort", async (
 
   const res = await shareLink({ title: "Panel", url: "https://con.app/?event=3" });
   assert.deepStrictEqual(res, { shared: false, copied: false });
+});
+
+test("copyText writes to the clipboard and reports success", async () => {
+  let copied = "";
+  setNavigator({
+    share: async () => {
+      throw new Error("copyText must never open a share sheet");
+    },
+    clipboard: {
+      writeText: async (text: string) => {
+        copied = text;
+      },
+    },
+  });
+
+  assert.strictEqual(await copyText("[DAY SUMMARY] 769 detail fetches"), true);
+  assert.strictEqual(copied, "[DAY SUMMARY] 769 detail fetches");
+});
+
+test("copyText returns false when the clipboard API is unavailable", async () => {
+  setNavigator({ share: async () => {} });
+  assert.strictEqual(await copyText("log"), false);
+
+  setNavigator({ clipboard: {} });
+  assert.strictEqual(await copyText("log"), false);
+});
+
+test("copyText returns false when the clipboard write is rejected", async () => {
+  setNavigator({
+    clipboard: {
+      writeText: async () => {
+        throw new Error("NotAllowedError: insecure context");
+      },
+    },
+  });
+
+  assert.strictEqual(await copyText("log"), false);
 });

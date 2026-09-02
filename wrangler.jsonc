@@ -9,8 +9,11 @@
     // invocation; both are pinned below that default as a deliberate
     // cost/safety ceiling for Dragon Con 2026 con-week traffic. Downgrade
     // back to the Free plan after Sep 2026 once the con-week traffic ends.
+    // subrequests raised 2000 -> 5000: a wholesale-403 day costs three fetches
+    // per blocked event (initial, delayed retry, browser fallback), which put
+    // a 769-event Saturday near 1800 once BROWSER_FALLBACK_BUDGET reached 450.
     "cpu_ms": 10000,
-    "subrequests": 2000
+    "subrequests": 5000
   },
   "routes": [
     {
