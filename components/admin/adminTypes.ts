@@ -97,6 +97,27 @@ export interface AdminDbStats {
   totalDeletedEvents: number;
   eventsByDay: Record<string, number>;
   totalUsers: number;
+  usage?: AdminUsageStats;
+}
+
+export interface AdminUsageStats {
+  totalSaves: number;
+  usersWithSaves: number;
+  goingCount: number;
+  interestedCount: number;
+  medianSavesPerActiveUser: number;
+  /** ET calendar date (YYYY-MM-DD) of the save action -> count, ascending by key. */
+  savesByDate: Array<{ date: string; count: number }>;
+  /** Fixed order: "0", "1-5", "6-20", "21+". */
+  scheduleSizeBuckets: Array<{ label: string; users: number }>;
+  /** Top 10, count desc then name asc. */
+  topTracks: Array<{ name: string; count: number }>;
+  /** Top 10, count desc then name asc. */
+  topLocations: Array<{ name: string; count: number }>;
+  /** events.day -> saved-event count, count desc then name asc. */
+  savesByConDay: Array<{ name: string; count: number }>;
+  /** Top 8 (con day, ET hour) buckets, count desc then day/hour asc. */
+  peakHours: Array<{ day: string; hour: number; count: number }>;
 }
 
 export interface BadgeStyle {

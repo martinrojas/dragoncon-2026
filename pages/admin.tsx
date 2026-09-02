@@ -20,6 +20,7 @@ import { AdminDiffSummary } from "../components/admin/AdminDiffSummary";
 import { AdminTerminalConsole } from "../components/admin/AdminTerminalConsole";
 import { AdminPastRunsTable } from "../components/admin/AdminPastRunsTable";
 import { AdminFeedbackList } from "../components/admin/AdminFeedbackList";
+import { AdminUsageMetrics } from "../components/admin/AdminUsageMetrics";
 import { useAdminAuth } from "../components/admin/useAdminAuth";
 import { useAdminDashboardData } from "../components/admin/useAdminDashboardData";
 import { useAdminIngest } from "../components/admin/useAdminIngest";
@@ -189,6 +190,8 @@ export default function AdminPage(props: Props) {
           </div>
 
           <AdminMetricsCards dbStats={dbStats} />
+
+          <AdminUsageMetrics usage={dbStats.usage} totalUsers={dbStats.totalUsers} />
 
           <AdminIngestControls
             syncMode={syncMode}

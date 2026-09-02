@@ -45,7 +45,7 @@ sources:
     resource: routes/api/hello.ts:1-9
     title: Void scaffold health check endpoint
   - id: admin-stats-route
-    resource: routes/api/admin/stats.ts:1-52
+    resource: routes/api/admin/stats.ts:1-178
     title: Admin database stats handler
   - id: admin-runs-route
     resource: routes/api/admin/runs.ts:1-16
@@ -234,7 +234,7 @@ Trigger manual schedule data synchronization from core-apps [^admin-ingest-route
 
 Administrative health checks, metrics, and audit history [^admin-stats-route] [^admin-runs-route].
 
-- **`GET /api/admin/stats`**: Returns active event counts, deleted event counts, per-day breakdowns, total users, and latest ingestion run summary.
+- **`GET /api/admin/stats`**: Returns active event counts, deleted event counts, per-day breakdowns, total users, latest ingestion run summary, and `usage` — an aggregate, non-identifiable read of saved schedules (total saves, going/interested split, median saves per active user, schedule-size buckets, saves per ET day, top tracks/locations, saves by con day, peak ET hours). Aggregation happens in the Worker; no per-user data leaves it.
 - **`GET /api/admin/runs`**: Returns 50 most recent ingestion executions — manual admin runs, legacy `POST /api/ingest` calls, and scheduled cron runs (attributed to `user_id: "cron"`) — with mode, status, stats summary, and completed timestamps.
 - **`GET /api/admin/runs/:id`**: Returns a single ingestion execution record including full captured console logs [^admin-run-detail-route].
 
@@ -358,7 +358,7 @@ In addition to HTTP endpoints, the Cloudflare Worker executes background sync tr
 [^passkey-route]: WebAuthn passkey registration and login ceremony handler — `routes/api/auth/passkey.ts:1-237`
 [^ics-route]: RFC 5545 iCalendar export handler — `routes/api/export-ics.ts:1-75`
 [^admin-ingest-route]: Admin schedule ingestion execution handler — `routes/api/admin/ingest.ts:1-31`
-[^admin-stats-route]: Admin database stats handler — `routes/api/admin/stats.ts:1-52`
+[^admin-stats-route]: Admin database stats handler — `routes/api/admin/stats.ts:1-178`
 [^admin-runs-route]: Admin historical ingestion runs query handler — `routes/api/admin/runs.ts:1-16`
 [^admin-run-detail-route]: Single admin ingestion run and captured log handler — `routes/api/admin/runs/[id].ts:1-27`
 [^legacy-ingest-route]: Legacy admin ingestion trigger — `routes/api/ingest.ts:1-29`

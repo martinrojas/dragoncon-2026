@@ -3,6 +3,18 @@
 Entries are listed in reverse chronological order (newest first).
 
 ---
+## 2026-09-02 — Admin Usage Metrics Panel
+
+- **Type:** Feature — new `📊 USAGE METRICS` glass panel on the admin dashboard.
+- **Interface:** `GET /api/admin/stats` now returns an optional `usage` aggregate (`AdminUsageStats` in `components/admin/adminTypes.ts`), computed by `tallyUsageStats` in `routes/api/admin/stats.ts` from a `user_events` LEFT JOIN `events` full scan (fine at ~1k rows; `ponytail:` marker documents the ~50k ceiling). No schema change, no new writes, no per-user data in the response.
+- **UI:** New `components/admin/AdminUsageMetrics.tsx` renders chips (total saves, active users, going/interested, median), schedule-size buckets, saves per ET day, top tracks/locations, saves by con day, and peak ET hours; wired after `AdminMetricsCards` in `pages/admin.tsx`. SSR loader unchanged — the panel fills via the existing `refreshDashboardData`.
+- **Privacy:** Aggregation reduces per-user rows to counts and bucket histograms before leaving the Worker; anonymous traffic stays covered by Cloudflare Web Analytics.
+- **Cache:** `public/sw.js` `CACHE_NAME` bumped `dragoncon-pwa-v25` → `dragoncon-pwa-v26`.
+- **Verification:** `pnpm test` 154/154 passed (two new `tallyUsageStats` cases incl. the ET-date rollover for post-midnight UTC saves); `pnpm build` clean (634 SSR / 85 client modules). E2E against `pnpm dev` + local D1: API returns `totalSaves: 0` with all four buckets on an empty table, and with 12 real saves the browser-rendered panel shows `TOTAL SAVES: 12`, `ACTIVE USERS: 3/4`, populated bars (screenshot-verified).
+
+Docs-freshness: head=d81e75bd09d4d8c2907ca865a67daadda4dee054 date=2026-09-02 pass=feature
+
+---
 ## 2026-08-29 — Post-Refactor Bundle Revalidation
 
 - **Type:** Documentation maintain pass after the admin and home-page decompositions.
