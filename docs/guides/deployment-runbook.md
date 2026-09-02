@@ -3,7 +3,7 @@ type: Guide
 title: Cloudflare Deployment & D1 Operations Runbook
 description: Step-by-step runbook for provisioning, migrating, and deploying the CyberDragon app on Cloudflare Workers and D1.
 tags: [guide, runbook, cloudflare, deployment, d1, ci]
-generated: { by: docsmith/1.3.0, at: 2026-08-29T07:04:03Z }
+generated: { by: docsmith/1.3.0, at: 2026-09-02T05:17:53Z }
 verified: [{ by: docsmith/1.3.0, at: 2026-08-23T20:05:00Z }]
 status: stable
 maintainer: CyberDragon Engineering
@@ -23,6 +23,9 @@ sources:
   - id: make-admin-script
     resource: scripts/make-admin.ts:1-169
     title: Admin promotion CLI script
+  - id: local-dev-state
+    resource: session:2026-09-02
+    title: D1 state split between the Wrangler CLI and the Vite dev server, session-observed
 ---
 
 # Cloudflare Deployment & D1 Operations Runbook
@@ -135,6 +138,7 @@ pnpm run make-admin <username>
 ```
 
 - **Local Dev Execution:** The tool automatically identifies the active SQLite database in `.void/v3/d1/miniflare-D1DatabaseObject/` matching the latest WAL/SHM mtime and migrated `role` column.
+- **Local Dev State Split:** `pnpm dev` serves D1 from `.void/v3/d1/miniflare-D1DatabaseObject/`, while `npx wrangler d1 execute --local` writes a separate tree under `.wrangler/state/v3/d1/` — CLI-seeded rows land outside the database the dev server reads (symptom: `adminGuard` 401s against a user you just seeded). Seed local dev data through the app's own endpoints instead, e.g. `curl -X POST localhost:5173/api/auth -d '{"action":"register","username":"<u>","password":"<p>","name":"<n>"}'`, then promote with `pnpm run make-admin <username>`.
 - **Manual Database Override:** Set `D1_SQLITE_PATH=/path/to/db.sqlite` if targeting a specific database file.
 - **Remote Production:** In production D1, update the user row directly via Wrangler:
   ```bash
@@ -167,3 +171,4 @@ One operational trap these limits cannot catch: **Cloudflare does not prevent ov
 [^wrangler-config]: Cloudflare Workers, custom domain, D1 database binding, and resource-limit configuration — `wrangler.jsonc:1-51`
 [^package-scripts]: Deployment and database migration npm scripts — `package.json:8-16`
 [^make-admin-script]: Admin promotion CLI script — `scripts/make-admin.ts:1-169`
+[^local-dev-state]: Local D1 state split between the Wrangler CLI and the Vite dev server, observed 2026-09-02 — session record in `docs/log.md` (2026-09-02 entry)
